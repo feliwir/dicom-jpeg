@@ -9,7 +9,9 @@
 //! | 1.2.840.10008.1.2.4.201 / .202 / .203 | HTJ2K (15444-15) | `htj2k` |
 //! | 1.2.840.10008.1.2.4.110 / .111 / .112 | JPEG XL (18181) | `jpeg-xl` |
 //!
-//! Encoders are enabled with the `encode` feature.
+//! Encoders are enabled with the `encode` feature, and the `dicom` feature
+//! provides [`dicom_rs::PixelAdapter`], an implementation of the dicom-rs
+//! `PixelDataReader` / `PixelDataWriter` traits.
 //!
 //! ```no_run
 //! use dicom_jpeg::{decode, DecodeOptions, TransferSyntax};
@@ -34,6 +36,8 @@ pub mod jpegls;
 #[cfg(feature = "jpeg-xl")]
 pub mod jxl;
 
+#[cfg(feature = "dicom")]
+pub mod dicom_rs;
 
 pub use error::{Error, Result};
 pub use image::{ColorSpace, Image, ImageInfo, Samples};

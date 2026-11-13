@@ -10,7 +10,7 @@ categories = ["compression", "multimedia::images"]
 exclude = ["testdata/", "fuzz/"]
 
 [features]
-default = ["jpeg", "jpeg-ls", "jpeg2000", "htj2k", "jpeg-xl", "encode"]
+default = ["jpeg", "jpeg-ls", "jpeg2000", "htj2k", "jpeg-xl", "encode", "dicom"]
 # ITU-T T.81: 1.2.840.10008.1.2.4.50 / .51 / .57 / .70
 jpeg = []
 # ITU-T T.87: .80 / .81
@@ -25,11 +25,22 @@ htj2k = ["jpeg2000"]
 jpeg-xl = []
 # Enable encoders (decoders are always available for enabled codecs)
 encode = []
+# dicom-rs PixelDataReader / PixelDataWriter adapters
+dicom = ["dep:dicom-encoding", "dep:dicom-core", "dep:dicom-dictionary-std"]
 # Data parallelism (tiles, code-blocks, frames)
 parallel = ["dep:rayon"]
 
 [dependencies]
+dicom-core = { version = "0.10.1", optional = true }
+dicom-dictionary-std = { version = "0.10.1", optional = true }
+dicom-encoding = { version = "0.10.1", optional = true }
 rayon = { version = "1.10", optional = true }
+
+[dev-dependencies]
+dicom-core = "0.10.1"
+dicom-dictionary-std = "0.10.1"
+dicom-encoding = "0.10.1"
+dicom-object = "0.10.1"
 
 [profile.test]
 opt-level = 2
