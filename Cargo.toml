@@ -76,3 +76,11 @@ required-features = ["jpeg", "encode"]
 [[example]]
 name = "decode"
 required-features = ["dicom"]
+
+[[test]]
+name = "jpegls_conformance"
+required-features = ["jpeg-ls", "dicom"]
+
+[[test]]
+name = "jpegls_encoder"
+required-features = ["jpeg-ls", "encode"]

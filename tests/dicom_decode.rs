@@ -69,7 +69,7 @@ cases!(ready, "jpeg", {
 });
 
 // ---- jpegls ------------------------------------------------------------
-cases!(pending, "jpeg-ls", {
+cases!(ready, "jpeg-ls", {
     pydicom_emri_small_jpeg_ls_lossless: "dicom/pydicom/emri_small_jpeg_ls_lossless.dcm" => Some("dicom/pydicom/emri_small.dcm"), Exact;
     pydicom_jlsl_08_07_0_1f: "dicom/pydicom/JLSL_08_07_0_1F.dcm" => None, Decodes;
     pydicom_jlsl_16_15_1_1f: "dicom/pydicom/JLSL_16_15_1_1F.dcm" => None, Decodes;

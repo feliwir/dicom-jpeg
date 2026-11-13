@@ -45,7 +45,7 @@ cases!(ready, "jpeg", {
 });
 
 // ---- JPEG-LS (T.87) ------------------------------------------------------------
-cases!(pending, "jpeg-ls", {
+cases!(ready, "jpeg-ls", {
     jls_lossless_ct1: "dicom/wg04/REF/CT1_UNC" => JpegLsLossless, None, Exact;
     jls_lossless_mr2: "dicom/wg04/REF/MR2_UNC" => JpegLsLossless, None, Exact;
     jls_lossless_rg1: "dicom/wg04/REF/RG1_UNC" => JpegLsLossless, None, Exact;
