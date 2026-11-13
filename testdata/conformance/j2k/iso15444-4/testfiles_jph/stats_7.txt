@@ -1,0 +1,24 @@
+Transcoding and wrapping ...
+Evaluating Statistics
+----B=11----
+16b C1-PEAK,    C2-PEAK,    C3-PEAK,   MAX-PEAK
+16b  C1-MSE,     C2-MSE,     C3-MSE,     AV-MSE
+    C1-PSNR,    C2-PSNR,    C3-PSNR,    AV-PSNR
+        653,        569,        603,        653
+ 12309.820302, 8565.125329, 12184.264617, 11019.736749
+      55.43,      57.00,      55.47,      55.91
+----B=15----
+16b C1-PEAK,    C2-PEAK,    C3-PEAK,   MAX-PEAK
+16b  C1-MSE,     C2-MSE,     C3-MSE,     AV-MSE
+    C1-PSNR,    C2-PSNR,    C3-PSNR,    AV-PSNR
+         28,         23,         28,         28
+  31.932053,  21.380571,  32.407776,  28.573467
+      81.29,      83.03,      81.22,      81.77
+----B=19----
+16b C1-PEAK,    C2-PEAK,    C3-PEAK,   MAX-PEAK
+16b  C1-MSE,     C2-MSE,     C3-MSE,     AV-MSE
+    C1-PSNR,    C2-PSNR,    C3-PSNR,    AV-PSNR
+          0,          0,          0,          0
+   0.000000,   0.000000,   0.000000,   0.000000
+        inf,        inf,        inf,        inf
+Cleanup ...

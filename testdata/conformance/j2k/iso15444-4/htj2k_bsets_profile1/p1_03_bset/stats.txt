@@ -1,0 +1,37 @@
+Transcoding ...
+Kakadu Core Warning:
+Dynamic indexing of tile-parts, whether by TLM (tile-part length) marker
+segments or otherwise, cannot be used by the current implementation when PPM
+(packed packet header) marker segments are also used.
+Kakadu Core Warning:
+Dynamic indexing of tile-parts, whether by TLM (tile-part length) marker
+segments or otherwise, cannot be used by the current implementation when PPM
+(packed packet header) marker segments are also used.
+    Processed 1 tile parts, with 1 tiles, writing:
+        1 PPM and 0 PPT marker segments in total.
+    Processed 1 tile parts, with 1 tiles, writing:
+        1 PPM and 0 PPT marker segments in total.
+-------------------
+Evaluating Statistics
+Kakadu Core Warning:
+Dynamic indexing of tile-parts, whether by TLM (tile-part length) marker
+segments or otherwise, cannot be used by the current implementation when PPM
+(packed packet header) marker segments are also used.
+----B=11----
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf
+ 8b   PEAK,  8b    MSE,       PSNR
+         1,   0.016738,      65.89
+ 8b   PEAK,  8b    MSE,       PSNR
+         2,   0.025322,      64.10
+ 8b   PEAK,  8b    MSE,       PSNR
+         2,   0.000111,      87.69
+----B=12----
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf

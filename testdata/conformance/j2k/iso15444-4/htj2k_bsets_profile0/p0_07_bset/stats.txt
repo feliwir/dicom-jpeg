@@ -1,0 +1,36 @@
+Transcoding ...
+-------------------
+Evaluating Statistics
+Kakadu Warning:
+Signed sample values will be written to the PGM file as unsigned 12-bit
+quantities, centered about 2048.
+Kakadu Warning:
+Signed sample values will be written to the PGM file as unsigned 12-bit
+quantities, centered about 2048.
+Kakadu Warning:
+Signed sample values will be written to the PGM file as unsigned 12-bit
+quantities, centered about 2048.
+Kakadu Warning:
+Signed sample values will be written to the PGM file as unsigned 12-bit
+quantities, centered about 2048.
+----B=11----
+12b C1-PEAK,    C2-PEAK,    C3-PEAK,   MAX-PEAK
+12b  C1-MSE,     C2-MSE,     C3-MSE,     AV-MSE
+    C1-PSNR,    C2-PSNR,    C3-PSNR,    AV-PSNR
+         39,         35,         47,         47
+  18.864944,  17.385110,  18.595790,  18.281948
+      59.49,      59.84,      59.55,      59.62
+----B=15----
+12b C1-PEAK,    C2-PEAK,    C3-PEAK,   MAX-PEAK
+12b  C1-MSE,     C2-MSE,     C3-MSE,     AV-MSE
+    C1-PSNR,    C2-PSNR,    C3-PSNR,    AV-PSNR
+          2,          2,          2,          2
+   0.047184,   0.020661,   0.045872,   0.037906
+      85.51,      89.09,      85.63,      86.46
+----B=16----
+12b C1-PEAK,    C2-PEAK,    C3-PEAK,   MAX-PEAK
+12b  C1-MSE,     C2-MSE,     C3-MSE,     AV-MSE
+    C1-PSNR,    C2-PSNR,    C3-PSNR,    AV-PSNR
+          0,          0,          0,          0
+   0.000000,   0.000000,   0.000000,   0.000000
+        inf,        inf,        inf,        inf

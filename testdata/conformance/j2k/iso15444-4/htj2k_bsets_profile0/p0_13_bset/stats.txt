@@ -1,0 +1,14 @@
+This one uses RGN, signalled in the main header, so the RGN 
+  capability is sufficient, without HET.
+Transcoding ...
+-------------------
+Evaluating Statistics
+----B=11----
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf

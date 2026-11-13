@@ -1,0 +1,10 @@
+Transcoding ...
+-------------------
+Evaluating Statistics
+----B=11----
+ 8b C1-PEAK,    C2-PEAK,    C3-PEAK,   MAX-PEAK
+ 8b  C1-MSE,     C2-MSE,     C3-MSE,     AV-MSE
+    C1-PSNR,    C2-PSNR,    C3-PSNR,    AV-PSNR
+          0,          0,          0,          0
+   0.000000,   0.000000,   0.000000,   0.000000
+        inf,        inf,        inf,        inf

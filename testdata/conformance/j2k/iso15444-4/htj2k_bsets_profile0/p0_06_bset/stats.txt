@@ -1,0 +1,48 @@
+Transcoding ...
+-------------------
+Evaluating Statistics
+----B=11----
+12b   PEAK, 12b    MSE,       PSNR
+      2198, 49765.935365,      25.28
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+12b   PEAK, 12b    MSE,       PSNR
+       191, 1677.825416,      40.00
+----B=15----
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+12b   PEAK, 12b    MSE,       PSNR
+        11,   6.659204,      64.01
+----B=18----
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+----B=11 HTMIX----
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+12b   PEAK, 12b    MSE,       PSNR
+       191, 1677.825416,      40.00
+----B=18 HTMIX----
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf

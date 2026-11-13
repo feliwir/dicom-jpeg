@@ -1,0 +1,7 @@
+In the development phase of this Recommendation | International Standard,
+all HTJ2K test codestreams and JPH files will be maintained in the
+Gitlab repository listed below.  The sub-directories of the current
+directory will be populated from the repository for the purpose of
+publication.
+
+https://gitlab.com/wg1/htj2k-codestreams

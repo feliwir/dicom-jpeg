@@ -1,0 +1,27 @@
+Generating content file wrapper and Profile 0 codestream ...
+Transcoding and wrapping ...
+-------------------
+Evaluating Statistics
+----B=11----
+ 8b   PEAK,  8b    MSE,       PSNR
+         2,   0.062927,      60.14
+ 8b   PEAK,  8b    MSE,       PSNR
+         2,   0.047226,      61.39
+ 8b   PEAK,  8b    MSE,       PSNR
+         2,   0.049042,      61.23
+ 8b   PEAK,  8b    MSE,       PSNR
+         1,   0.038330,      62.30
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf
+----B=12----
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf
+Cleanup

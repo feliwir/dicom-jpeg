@@ -1,0 +1,18 @@
+Transcoding ...
+-------------------
+Evaluating Statistics
+Kakadu Warning:
+Signed sample values will be written to the PGM file as unsigned 8-bit
+quantities, centered about 128.
+Kakadu Warning:
+Signed sample values will be written to the PGM file as unsigned 8-bit
+quantities, centered about 128.
+Kakadu Warning:
+Signed sample values will be written to the PGM file as unsigned 8-bit
+quantities, centered about 128.
+----B=11----
+ 8b   PEAK,  8b    MSE,       PSNR
+        64,  27.726566,      33.70
+----B=14----
+ 8b   PEAK,  8b    MSE,       PSNR
+         0,   0.000000,        inf

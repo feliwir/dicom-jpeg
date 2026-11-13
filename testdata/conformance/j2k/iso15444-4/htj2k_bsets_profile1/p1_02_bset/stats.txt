@@ -1,0 +1,21 @@
+Transcoding ...
+    Processed 1 tile parts, with 1 tiles, writing:
+        0 PPM and 1 PPT marker segments in total.
+    Processed 1 tile parts, with 1 tiles, writing:
+        0 PPM and 1 PPT marker segments in total.
+-------------------
+Evaluating Statistics
+----B=11----
+ 8b C1-PEAK,    C2-PEAK,    C3-PEAK,   MAX-PEAK
+ 8b  C1-MSE,     C2-MSE,     C3-MSE,     AV-MSE
+    C1-PSNR,    C2-PSNR,    C3-PSNR,    AV-PSNR
+          2,          2,          2,          2
+   0.062126,   0.054938,   0.056699,   0.057921
+      60.20,      60.73,      60.60,      60.50
+----B=12----
+ 8b C1-PEAK,    C2-PEAK,    C3-PEAK,   MAX-PEAK
+ 8b  C1-MSE,     C2-MSE,     C3-MSE,     AV-MSE
+    C1-PSNR,    C2-PSNR,    C3-PSNR,    AV-PSNR
+          0,          0,          0,          0
+   0.000000,   0.000000,   0.000000,   0.000000
+        inf,        inf,        inf,        inf

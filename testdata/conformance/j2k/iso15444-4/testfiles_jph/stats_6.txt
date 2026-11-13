@@ -1,0 +1,9 @@
+Transcoding and wrapping ...
+Evaluating Statistics
+----B=11----
+12b   PEAK, 12b    MSE,       PSNR
+        25,  24.301909,      58.39
+----B=15----
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
+Cleanup ...

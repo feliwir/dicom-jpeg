@@ -1,0 +1,6 @@
+Transcoding ...
+-------------------
+Evaluating Statistics
+----B=9----
+12b   PEAK, 12b    MSE,       PSNR
+         0,   0.000000,        inf
