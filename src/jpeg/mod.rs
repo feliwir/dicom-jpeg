@@ -8,11 +8,18 @@
 mod bitreader;
 mod color;
 mod decoder;
+#[cfg(feature = "encode")]
+mod encoder;
+#[cfg(feature = "encode")]
+mod fdct;
 mod huffman;
+#[cfg(feature = "encode")]
+mod huffman_encode;
 mod idct;
 
 #[cfg(feature = "encode")]
-use crate::error::Error;
+pub use encoder::{ChromaSubsampling, EncoderOptions, encode_with};
+
 use crate::error::Result;
 use crate::{Codec, DecodeOptions, Image, ImageInfo, Limits};
 #[cfg(feature = "encode")]
@@ -50,7 +57,14 @@ pub fn decode(data: &[u8], opts: &DecodeOptions) -> Result<Image> {
 }
 
 /// Encode an image for the given transfer syntax.
+///
+/// `opts.quality` (default 90) controls DCT-based coding; lossless syntaxes
+/// use predictor 1 and no point transform. Use [`encode_with`] for full control.
 #[cfg(feature = "encode")]
-pub fn encode(_ts: TransferSyntax, _image: &Image, _opts: &EncodeOptions) -> Result<Encoded> {
-    Err(Error::unsupported(CODEC, "encoder not implemented yet"))
+pub fn encode(ts: TransferSyntax, image: &Image, opts: &EncodeOptions) -> Result<Encoded> {
+    let params = EncoderOptions {
+        quality: opts.quality.unwrap_or(90),
+        ..EncoderOptions::default()
+    };
+    encode_with(ts, image, &params)
 }

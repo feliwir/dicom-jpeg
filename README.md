@@ -5,7 +5,7 @@ Each codec sits behind its own cargo feature.
 
 | Transfer syntax UID (1.2.840.10008.1.2.4.x) | Codec | Feature | Status |
 |---|---|---|---|
-| .50 .51 .57 .70 | JPEG baseline / extended / lossless (T.81) | `jpeg` | decoder ✔, encoder planned (phase 2) |
+| .50 .51 .57 .70 | JPEG baseline / extended / lossless (T.81) | `jpeg` | decoder ✔ encoder ✔ |
 | .80 .81 | JPEG-LS (T.87) | `jpeg-ls` | planned (phase 3) |
 | .90 .91 | JPEG 2000 (15444-1) | `jpeg2000` | planned (phase 4–5) |
 | .92 .93 | JPEG 2000 Part 2 multi-component | `jpeg2000-part2` | planned (phase 7) |
