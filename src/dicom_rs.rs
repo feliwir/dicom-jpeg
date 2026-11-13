@@ -200,7 +200,16 @@ impl PixelDataReader for PixelAdapter {
             })
             .with_color_hint(color_hint(src.photometric_interpretation()))
             .with_limits(self.limits);
-        let image: Image = crate::decode(self.ts, &data, &opts).map_err(codec_decode_error)?;
+        let mut image: Image = crate::decode(self.ts, &data, &opts).map_err(codec_decode_error)?;
+        // Lossy codestreams may carry more bits than the object stores (e.g. 10-bit
+        // data in a 12-bit JPEG); clamp overshoot so it cannot wrap when masked.
+        if let Some(bits_stored) = src.bits_stored()
+            && !image.info.signed
+            && (bits_stored as u8) < image.info.bits_per_sample
+            && bits_stored > 0
+        {
+            clamp_unsigned(&mut image, bits_stored as u8);
+        }
 
         let info = &image.info;
         if info.width != u32::from(cols) || info.height != u32::from(rows) {
@@ -230,5 +239,13 @@ impl PixelDataReader for PixelAdapter {
             .write_le_bytes(bytes, dst)
             .map_err(codec_decode_error)?;
         Ok(())
+    }
+}
+
+fn clamp_unsigned(image: &mut Image, bits: u8) {
+    let max = (1u32 << bits) - 1;
+    match &mut image.samples {
+        crate::Samples::U8(v) => v.iter_mut().for_each(|s| *s = (*s as u32).min(max) as u8),
+        crate::Samples::U16(v) => v.iter_mut().for_each(|s| *s = (*s as u32).min(max) as u16),
     }
 }
