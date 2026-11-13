@@ -240,7 +240,10 @@ fn parse_siz(seg: &[u8]) -> Result<Siz> {
             return Err(invalid("component precision above 38 bits"));
         }
         if precision > 31 {
-            return Err(Error::unsupported(CODEC, "component precision above 31 bits"));
+            return Err(Error::unsupported(
+                CODEC,
+                "component precision above 31 bits",
+            ));
         }
         if dx == 0 || dy == 0 {
             return Err(invalid("zero component subsampling"));

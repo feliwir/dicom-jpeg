@@ -1,8 +1,8 @@
 //! Tag trees (T.800 B.10.2).
 
 #[derive(Debug, Clone, Copy)]
-struct Node {
-    parent: Option<usize>,
+pub(crate) struct Node {
+    pub(crate) parent: Option<usize>,
     value: i32,
     low: i32,
 }
@@ -10,7 +10,7 @@ struct Node {
 /// A tag tree over a `w` x `h` grid of leaves.
 #[derive(Debug, Clone)]
 pub(crate) struct TagTree {
-    nodes: Vec<Node>,
+    pub(crate) nodes: Vec<Node>,
     leaves_w: usize,
 }
 
@@ -130,5 +130,97 @@ mod tests {
             b
         };
         assert_eq!(t.decode_value(0, 0, &mut next), Some(2));
+    }
+}
+
+/// Tag tree encoder (B.10.2).
+#[cfg(feature = "encode")]
+#[derive(Debug, Clone)]
+pub(crate) struct TagTreeEncoder {
+    nodes: Vec<(Option<usize>, i32, i32, bool)>, // parent, value, low, known
+    leaves_w: usize,
+}
+
+#[cfg(feature = "encode")]
+impl TagTreeEncoder {
+    /// Build from leaf values (row-major, `w` x `h`).
+    pub(crate) fn new(w: usize, h: usize, leaves: &[i32]) -> Self {
+        let shape = TagTree::new(w, h);
+        let mut nodes: Vec<(Option<usize>, i32, i32, bool)> = shape
+            .nodes
+            .iter()
+            .map(|n| (n.parent, i32::MAX, 0, false))
+            .collect();
+        for (i, &v) in leaves.iter().enumerate() {
+            nodes[i].1 = v;
+        }
+        // Parents hold the minimum of their children (children precede parents).
+        for i in 0..nodes.len() {
+            if let Some(p) = nodes[i].0 {
+                nodes[p].1 = nodes[p].1.min(nodes[i].1);
+            }
+        }
+        TagTreeEncoder { nodes, leaves_w: w }
+    }
+
+    /// Emit the bits telling whether leaf (x, y) is below `threshold`.
+    pub(crate) fn encode(&mut self, x: usize, y: usize, threshold: i32, out: &mut dyn FnMut(bool)) {
+        let leaf = y * self.leaves_w + x;
+        let mut path = Vec::with_capacity(16);
+        let mut n = Some(leaf);
+        while let Some(i) = n {
+            path.push(i);
+            n = self.nodes[i].0;
+        }
+        let mut low = 0;
+        for &i in path.iter().rev() {
+            let node = &mut self.nodes[i];
+            if low > node.2 {
+                node.2 = low;
+            } else {
+                low = node.2;
+            }
+            while low < threshold {
+                if low >= node.1 {
+                    if !node.3 {
+                        out(true);
+                        node.3 = true;
+                    }
+                    break;
+                }
+                out(false);
+                low += 1;
+            }
+            node.2 = low;
+        }
+    }
+}
+
+#[cfg(all(test, feature = "encode"))]
+mod encoder_tests {
+    use super::*;
+
+    #[test]
+    fn tag_tree_round_trip() {
+        let (w, h) = (5, 3);
+        let values: Vec<i32> = (0..15).map(|i| i * 7 % 5).collect();
+        let mut enc = TagTreeEncoder::new(w, h, &values);
+        let mut bits = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                let v = values[y * w + x];
+                for t in 1..=v + 1 {
+                    enc.encode(x, y, t, &mut |b| bits.push(b));
+                }
+            }
+        }
+        let mut dec = TagTree::new(w, h);
+        let mut it = bits.into_iter();
+        let mut next = || it.next();
+        for y in 0..h {
+            for x in 0..w {
+                assert_eq!(dec.decode_value(x, y, &mut next), Some(values[y * w + x]));
+            }
+        }
     }
 }

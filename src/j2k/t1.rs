@@ -33,23 +33,23 @@ const REFINED: u8 = 8;
 
 // Neighbourhood word bits: significance of the 8 neighbours, and signs of the
 // 4 direct neighbours (set when they become significant).
-const N_W: u16 = 1 << 0;
-const N_E: u16 = 1 << 1;
-const N_N: u16 = 1 << 2;
-const N_S: u16 = 1 << 3;
-const N_NW: u16 = 1 << 4;
-const N_NE: u16 = 1 << 5;
-const N_SW: u16 = 1 << 6;
-const N_SE: u16 = 1 << 7;
-const NEG_W: u16 = 1 << 8;
-const NEG_E: u16 = 1 << 9;
-const NEG_N: u16 = 1 << 10;
-const NEG_S: u16 = 1 << 11;
+pub(crate) const N_W: u16 = 1 << 0;
+pub(crate) const N_E: u16 = 1 << 1;
+pub(crate) const N_N: u16 = 1 << 2;
+pub(crate) const N_S: u16 = 1 << 3;
+pub(crate) const N_NW: u16 = 1 << 4;
+pub(crate) const N_NE: u16 = 1 << 5;
+pub(crate) const N_SW: u16 = 1 << 6;
+pub(crate) const N_SE: u16 = 1 << 7;
+pub(crate) const NEG_W: u16 = 1 << 8;
+pub(crate) const NEG_E: u16 = 1 << 9;
+pub(crate) const NEG_N: u16 = 1 << 10;
+pub(crate) const NEG_S: u16 = 1 << 11;
 /// Bits that refer to the row below (ignored in vertically causal mode).
 const BELOW: u16 = N_S | N_SW | N_SE | NEG_S;
 
 /// Zero-coding context (Table D.1).
-fn zc_context(orient: Orient, h: u32, v: u32, d: u32) -> usize {
+pub(crate) fn zc_context(orient: Orient, h: u32, v: u32, d: u32) -> usize {
     let (h, v) = if orient == Orient::HL { (v, h) } else { (h, v) };
     if orient == Orient::HH {
         let hv = h + v;
@@ -79,7 +79,7 @@ fn zc_context(orient: Orient, h: u32, v: u32, d: u32) -> usize {
 }
 
 /// Sign-coding context and XOR bit (Table D.3) from clamped contributions.
-fn sc_context(h: i32, v: i32) -> (usize, u32) {
+pub(crate) fn sc_context(h: i32, v: i32) -> (usize, u32) {
     match (h, v) {
         (1, 1) => (13, 0),
         (1, 0) => (12, 0),

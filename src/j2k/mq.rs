@@ -225,3 +225,166 @@ impl<'a> RawDecoder<'a> {
         (self.c >> self.ct) & 1
     }
 }
+
+/// MQ arithmetic encoder (C.2), producing one terminated segment.
+#[cfg(feature = "encode")]
+#[derive(Debug)]
+pub(crate) struct MqEncoder {
+    /// Output with a leading dummy byte (index 0) that absorbs the BP = -1 state.
+    out: Vec<u8>,
+    bp: usize,
+    a: u32,
+    c: u32,
+    ct: u32,
+}
+
+#[cfg(feature = "encode")]
+impl MqEncoder {
+    pub(crate) fn new() -> Self {
+        MqEncoder {
+            out: vec![0],
+            bp: 0,
+            a: 0x8000,
+            c: 0,
+            ct: 12,
+        }
+    }
+
+    #[inline]
+    fn byteout(&mut self) {
+        if self.out[self.bp] == 0xFF {
+            self.bp += 1;
+            self.put((self.c >> 20) as u8);
+            self.c &= 0xF_FFFF;
+            self.ct = 7;
+        } else if self.c < 0x800_0000 {
+            self.bp += 1;
+            self.put((self.c >> 19) as u8);
+            self.c &= 0x7_FFFF;
+            self.ct = 8;
+        } else {
+            self.out[self.bp] = self.out[self.bp].wrapping_add(1);
+            if self.out[self.bp] == 0xFF {
+                self.c &= 0x7FF_FFFF;
+                self.bp += 1;
+                self.put((self.c >> 20) as u8);
+                self.c &= 0xF_FFFF;
+                self.ct = 7;
+            } else {
+                self.bp += 1;
+                self.put((self.c >> 19) as u8);
+                self.c &= 0x7_FFFF;
+                self.ct = 8;
+            }
+        }
+    }
+
+    #[inline]
+    fn put(&mut self, b: u8) {
+        if self.bp == self.out.len() {
+            self.out.push(b);
+        } else {
+            self.out[self.bp] = b;
+        }
+    }
+
+    #[inline]
+    fn renorm(&mut self) {
+        loop {
+            self.a <<= 1;
+            self.c <<= 1;
+            self.ct -= 1;
+            if self.ct == 0 {
+                self.byteout();
+            }
+            if self.a & 0x8000 != 0 {
+                break;
+            }
+        }
+    }
+
+    /// ENCODE decision `d` in context `cx`.
+    #[inline]
+    pub(crate) fn encode(&mut self, cx: &mut Context, d: u32) {
+        let (qe, nmps, nlps, switch) = STATES[cx.state as usize];
+        if d == cx.mps as u32 {
+            self.a -= qe;
+            if self.a & 0x8000 == 0 {
+                if self.a < qe {
+                    self.a = qe;
+                } else {
+                    self.c += qe;
+                }
+                cx.state = nmps;
+                self.renorm();
+            } else {
+                self.c += qe;
+            }
+        } else {
+            self.a -= qe;
+            if self.a < qe {
+                self.c += qe;
+            } else {
+                self.a = qe;
+            }
+            if switch {
+                cx.mps = 1 - cx.mps;
+            }
+            cx.state = nlps;
+            self.renorm();
+        }
+    }
+
+    /// FLUSH and return the segment bytes.
+    pub(crate) fn finish(mut self) -> Vec<u8> {
+        // SETBITS
+        let temp = self.c + self.a;
+        self.c |= 0xFFFF;
+        if self.c >= temp {
+            self.c -= 0x8000;
+        }
+        self.c <<= self.ct;
+        self.byteout();
+        self.c <<= self.ct;
+        self.byteout();
+        // A segment must not end with 0xFF.
+        let mut end = self.bp;
+        if self.out[end] != 0xFF {
+            end += 1;
+        }
+        let mut out = self.out;
+        out.truncate(end.max(1));
+        out.remove(0);
+        out
+    }
+}
+
+#[cfg(all(test, feature = "encode"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mq_round_trip() {
+        let mut seed = 99u32;
+        let decisions: Vec<(usize, u32)> = (0..20000)
+            .map(|i| {
+                seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+                let cx = (seed >> 16) as usize % NUM_CONTEXTS;
+                // Skewed probabilities per context.
+                let bit = ((seed >> 8) % 100 < (cx as u32 * 5 + 3)) as u32 ^ (i % 7 == 0) as u32;
+                (cx, bit)
+            })
+            .collect();
+        let mut enc = MqEncoder::new();
+        let mut ctx = initial_contexts();
+        for &(cx, d) in &decisions {
+            enc.encode(&mut ctx[cx], d);
+        }
+        let data = enc.finish();
+        let mut dec = MqDecoder::new(&data);
+        let mut ctx = initial_contexts();
+        for (i, &(cx, d)) in decisions.iter().enumerate() {
+            assert_eq!(dec.decode(&mut ctx[cx]), d, "decision {i}");
+        }
+    }
+}

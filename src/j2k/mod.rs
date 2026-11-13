@@ -9,13 +9,19 @@
 mod codestream;
 mod decoder;
 mod dwt;
+#[cfg(feature = "encode")]
+mod encoder;
 mod jp2;
 mod mq;
 mod t1;
+#[cfg(feature = "encode")]
+mod t1_enc;
 mod tagtree;
 mod tile;
 
 pub use decoder::{Component, DecoderOptions};
+#[cfg(feature = "encode")]
+pub use encoder::{EncoderOptions, encode_with};
 
 use crate::error::{Error, Result};
 use crate::{Codec, ColorSpace, DecodeOptions, Image, ImageInfo, Samples};
@@ -118,7 +124,33 @@ pub fn decode(data: &[u8], opts: &DecodeOptions) -> Result<Image> {
 }
 
 /// Encode an image for the given transfer syntax.
+///
+/// `Jpeg2000Lossless` is always lossless. `Jpeg2000` is lossless when
+/// `opts.quality` is `None` or 100, otherwise irreversible (9/7) with that
+/// quality. Use [`encode_with`] for full control.
 #[cfg(feature = "encode")]
-pub fn encode(_ts: TransferSyntax, _image: &Image, _opts: &EncodeOptions) -> Result<Encoded> {
-    Err(Error::unsupported(CODEC, "encoder not implemented yet"))
+pub fn encode(ts: TransferSyntax, image: &Image, opts: &EncodeOptions) -> Result<Encoded> {
+    let reversible = match ts {
+        TransferSyntax::Jpeg2000Lossless => true,
+        TransferSyntax::Jpeg2000 => matches!(opts.quality, None | Some(100..)),
+        TransferSyntax::Jpeg2000Part2Lossless | TransferSyntax::Jpeg2000Part2 => {
+            return Err(Error::unsupported(CODEC, "Part 2 multi-component encoding"));
+        }
+        TransferSyntax::HtJ2kLossless
+        | TransferSyntax::HtJ2kLosslessRpcl
+        | TransferSyntax::HtJ2k => {
+            return Err(Error::unsupported(Codec::HtJ2k, "HTJ2K encoding"));
+        }
+        _ => {
+            return Err(Error::input(format!(
+                "{ts} is not a JPEG 2000 transfer syntax"
+            )));
+        }
+    };
+    let params = EncoderOptions {
+        reversible,
+        quality: opts.quality.unwrap_or(90),
+        ..EncoderOptions::default()
+    };
+    encode_with(image, &params)
 }
