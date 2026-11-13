@@ -41,6 +41,7 @@ dicom-core = "0.10.1"
 dicom-dictionary-std = "0.10.1"
 dicom-encoding = "0.10.1"
 dicom-object = "0.10.1"
+jpeg-decoder = "0.3"
 
 [[test]]
 name = "dicom_decode"
@@ -63,3 +64,7 @@ undocumented_unsafe_blocks = "deny"
 [[test]]
 name = "dicom_harness"
 required-features = ["dicom"]
+
+[[test]]
+name = "jpeg_conformance"
+required-features = ["jpeg", "dicom"]

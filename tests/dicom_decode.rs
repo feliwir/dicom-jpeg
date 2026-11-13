@@ -18,7 +18,7 @@ macro_rules! cases {
 }
 
 // ---- jpeg ------------------------------------------------------------
-cases!(pending, "jpeg", {
+cases!(ready, "jpeg", {
     pydicom_color3d_jpeg_baseline: "dicom/pydicom/color3d_jpeg_baseline.dcm" => None, Decodes;
     pydicom_jpglosslessp14sv1_1s_1f_8b: "dicom/pydicom/JPGLosslessP14SV1_1s_1f_8b.dcm" => None, Decodes;
     pydicom_sc_rgb_dcmtk_eb_cr: "dicom/pydicom/SC_rgb_dcmtk_+eb+cr.dcm" => Some("dicom/pydicom/SC_rgb_dcmtk_ebcr_dcmd.dcm"), MaxAbs(1);
@@ -29,7 +29,8 @@ cases!(pending, "jpeg", {
     pydicom_sc_rgb_dcmtk_eb_cy_s4: "dicom/pydicom/SC_rgb_dcmtk_+eb+cy+s4.dcm" => Some("dicom/pydicom/SC_rgb_dcmtk_ebcys4_dcmd.dcm"), MaxAbs(1);
     pydicom_sc_rgb_jpeg_dcmtk: "dicom/pydicom/SC_rgb_jpeg_dcmtk.dcm" => Some("dicom/pydicom/SC_rgb.dcm"), Psnr(30.0);
     pydicom_sc_rgb_jpeg_gdcm: "dicom/pydicom/SC_rgb_jpeg_gdcm.dcm" => Some("dicom/pydicom/SC_rgb.dcm"), Exact;
-    pydicom_sc_rgb_jpeg_lossy_gdcm: "dicom/pydicom/SC_rgb_jpeg_lossy_gdcm.dcm" => Some("dicom/pydicom/SC_rgb.dcm"), Psnr(30.0);
+        // Labelled RGB but stored as 4:2:0 YCbCr; strongly compressed.
+    pydicom_sc_rgb_jpeg_lossy_gdcm: "dicom/pydicom/SC_rgb_jpeg_lossy_gdcm.dcm" => Some("dicom/pydicom/SC_rgb.dcm"), Psnr(25.0);
     pydicom_sc_rgb_small_odd_jpeg: "dicom/pydicom/SC_rgb_small_odd_jpeg.dcm" => Some("dicom/pydicom/SC_rgb_small_odd.dcm"), Psnr(30.0);
     pylibjpeg_jpegbaseline_jpegbaseline_1s_1f_u_08_08: "dicom/pylibjpeg/JPEGBaseline/JPEGBaseline_1s_1f_u_08_08.dcm" => None, Decodes;
     pylibjpeg_jpegbaseline_sc_jpeg_no_color_transform_2: "dicom/pylibjpeg/JPEGBaseline/SC_jpeg_no_color_transform_2.dcm" => None, Decodes;
@@ -54,16 +55,17 @@ cases!(pending, "jpeg", {
     wg04_jpll_rg3_jpll: "dicom/wg04/JPLL/RG3_JPLL" => Some("dicom/wg04/REF/RG3_UNC"), Exact;
     wg04_jpll_sc1_jpll: "dicom/wg04/JPLL/SC1_JPLL" => Some("dicom/wg04/REF/SC1_UNC"), Exact;
     wg04_jpll_xa1_jpll: "dicom/wg04/JPLL/XA1_JPLL" => Some("dicom/wg04/REF/XA1_UNC"), Exact;
-    wg04_jply_mg1_jply: "dicom/wg04/JPLY/MG1_JPLY" => Some("dicom/wg04/REF/MG1_UNC"), Psnr(30.0);
-    wg04_jply_mr1_jply: "dicom/wg04/JPLY/MR1_JPLY" => Some("dicom/wg04/REF/MR1_UNC"), Psnr(30.0);
-    wg04_jply_mr2_jply: "dicom/wg04/JPLY/MR2_JPLY" => Some("dicom/wg04/REF/MR2_UNC"), Psnr(30.0);
-    wg04_jply_mr3_jply: "dicom/wg04/JPLY/MR3_JPLY" => Some("dicom/wg04/REF/MR3_UNC"), Psnr(30.0);
-    wg04_jply_mr4_jply: "dicom/wg04/JPLY/MR4_JPLY" => Some("dicom/wg04/REF/MR4_UNC"), Psnr(30.0);
-    wg04_jply_nm1_jply: "dicom/wg04/JPLY/NM1_JPLY" => Some("dicom/wg04/REF/NM1_UNC"), Psnr(30.0);
-    wg04_jply_rg2_jply: "dicom/wg04/JPLY/RG2_JPLY" => Some("dicom/wg04/REF/RG2_UNC"), Psnr(30.0);
-    wg04_jply_rg3_jply: "dicom/wg04/JPLY/RG3_JPLY" => Some("dicom/wg04/REF/RG3_UNC"), Psnr(30.0);
-    wg04_jply_sc1_jply: "dicom/wg04/JPLY/SC1_JPLY" => Some("dicom/wg04/REF/SC1_UNC"), Psnr(30.0);
-    wg04_jply_xa1_jply: "dicom/wg04/JPLY/XA1_JPLY" => Some("dicom/wg04/REF/XA1_UNC"), Psnr(30.0);
+    wg04_jply_mg1_jply: "dicom/wg04/JPLY/MG1_JPLY" => Some("dicom/wg04/REF/MG1_UNC"), Psnr(44.0);
+    // MR1 is 16 bit; the 12-bit lossy version cannot be compared with the original.
+    wg04_jply_mr1_jply: "dicom/wg04/JPLY/MR1_JPLY" => None, Decodes;
+    wg04_jply_mr2_jply: "dicom/wg04/JPLY/MR2_JPLY" => Some("dicom/wg04/REF/MR2_UNC"), Psnr(44.0);
+    wg04_jply_mr3_jply: "dicom/wg04/JPLY/MR3_JPLY" => Some("dicom/wg04/REF/MR3_UNC"), Psnr(44.0);
+    wg04_jply_mr4_jply: "dicom/wg04/JPLY/MR4_JPLY" => Some("dicom/wg04/REF/MR4_UNC"), Psnr(44.0);
+    wg04_jply_nm1_jply: "dicom/wg04/JPLY/NM1_JPLY" => Some("dicom/wg04/REF/NM1_UNC"), Psnr(44.0);
+    wg04_jply_rg2_jply: "dicom/wg04/JPLY/RG2_JPLY" => Some("dicom/wg04/REF/RG2_UNC"), Psnr(44.0);
+    wg04_jply_rg3_jply: "dicom/wg04/JPLY/RG3_JPLY" => Some("dicom/wg04/REF/RG3_UNC"), Psnr(44.0);
+    wg04_jply_sc1_jply: "dicom/wg04/JPLY/SC1_JPLY" => Some("dicom/wg04/REF/SC1_UNC"), Psnr(44.0);
+    wg04_jply_xa1_jply: "dicom/wg04/JPLY/XA1_JPLY" => Some("dicom/wg04/REF/XA1_UNC"), Psnr(44.0);
 });
 
 // ---- jpegls ------------------------------------------------------------
