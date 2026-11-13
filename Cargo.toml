@@ -42,6 +42,14 @@ dicom-dictionary-std = "0.10.1"
 dicom-encoding = "0.10.1"
 dicom-object = "0.10.1"
 
+[[test]]
+name = "dicom_decode"
+required-features = ["dicom"]
+
+[[test]]
+name = "dicom_roundtrip"
+required-features = ["dicom", "encode"]
+
 [profile.test]
 opt-level = 2
 
@@ -52,3 +60,6 @@ missing_debug_implementations = "warn"
 [lints.clippy]
 undocumented_unsafe_blocks = "deny"
 
+[[test]]
+name = "dicom_harness"
+required-features = ["dicom"]
