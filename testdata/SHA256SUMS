@@ -813,6 +813,9 @@ f4fc842ed15a8c451d25f2595d68b533777b19f10748d961ab2b0afcc51bcc07  ./conformance/
 223f9ca11722e7eccae9eadb158fa2c7bf806ed0aa6ee4390a96df7770035ba4  ./conformance/t81/w3/jpeg420exif.jpg
 c8b34da2afa5924b9f7bae6a028860fee2655c3d14f84a8361f02dfb9fa99448  ./conformance/t81/w3/jpeg422jfif.jpg
 89c632bbc42bc917f81e7c47595c95cb914a619604ac07b8cebf6fd4d1d744ca  ./conformance/t81/w3/jpeg444.jpg
+2a4ec4ea776da665292a916af03838411e48d2b68df89909fc9f60a0275e57db  ./dicom/dcmtk/monkey12_dcmd_rgb.dcm
+771c6380313a8e6953e5bf675b4a89b981a47193751c5362a8c5f60cd1ea0f70  ./dicom/dcmtk/monkey12_dcmd_ybr.dcm
+76b9ab3fc8eaf7ddd1591cf5ca48a22b6535c2d46f46348f9db3d5b06902274a  ./dicom/dcmtk/monkey12_jply.dcm
 8d5d503fd46b9a59c628762d71d7391ea1a2a5fd8d339ac82ef9e281a15ef65f  ./dicom/pydicom/693_J2KI.dcm
 c392d8bd1f952ed2d9387d5143d34c5a29ac9d74566688169731a50ac6a82aa2  ./dicom/pydicom/693_J2KR.dcm
 42d6c33d6666bf569a53951211be6fca2ab04956db43c3f75a9720d976ab128c  ./dicom/pydicom/693_UNCI.dcm

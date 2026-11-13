@@ -12,6 +12,7 @@ Files were collected on 2026-11-13.
 | `dicom/wg04/` | NEMA DICOM WG04 compression sample set, via [robyoung/dicom-test-files](https://github.com/robyoung/dicom-test-files) `data/WG04` | commit `6279c96a8a9d4ed2cfba89ac67ebcf669c4471f9` | NEMA public sample data |
 | `dicom/pydicom/` | pydicom test files via robyoung/dicom-test-files `data/pydicom`, plus HTJ2K/JPEG-LS files from [pydicom/pydicom-data](https://github.com/pydicom/pydicom-data) `data_store/data` | dicom-test-files `6279c96`, pydicom-data `abc42b90985fb6cf385aa4af766d2c9c94a257a4` | see `dicom/pydicom/README.txt` (MIT, pydicom) |
 | `dicom/pylibjpeg/` | [pydicom/pylibjpeg-data](https://github.com/pydicom/pylibjpeg-data) `ljdata/ds` | commit `8253566715800a7fc3d4d949abab102c8172bca0` | MIT, see `dicom/pylibjpeg/LICENSE.txt` |
+| `dicom/dcmtk/` | 12-bit colour reference generated locally: `monkey12_jply.dcm` = libjpeg-turbo `testimages/monkey12.jpg` wrapped with DCMTK `img2dcm` (no recompression); `monkey12_dcmd_rgb.dcm` / `monkey12_dcmd_ybr.dcm` = DCMTK `dcmdjpeg` decodes (IJG 6b 12-bit) with and without (`+cn`) YCbCr->RGB conversion | DCMTK 3.6.9, 2026-11-13 | see libjpeg-turbo `LICENSE.txt` |
 
 Changes made to the originals:
 
