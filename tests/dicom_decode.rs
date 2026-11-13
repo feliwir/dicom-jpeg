@@ -107,7 +107,7 @@ cases!(ready, "jpeg-ls", {
 });
 
 // ---- j2k ------------------------------------------------------------
-cases!(pending, "jpeg2000", {
+cases!(ready, "jpeg2000", {
     pydicom_693_j2ki: "dicom/pydicom/693_J2KI.dcm" => Some("dicom/pydicom/693_UNCI.dcm"), MaxAbs(1);
     pydicom_693_j2kr: "dicom/pydicom/693_J2KR.dcm" => Some("dicom/pydicom/693_UNCR.dcm"), Exact;
     pydicom_emri_small_jpeg_2k_lossless: "dicom/pydicom/emri_small_jpeg_2k_lossless.dcm" => Some("dicom/pydicom/emri_small.dcm"), Exact;
@@ -128,26 +128,26 @@ cases!(pending, "jpeg2000", {
     pylibjpeg_jpeg2000lossless_toshiba_j2k_openjpegv2regression: "dicom/pylibjpeg/JPEG2000Lossless/TOSHIBA_J2K_OpenJPEGv2Regression.dcm" => None, Decodes;
     pylibjpeg_jpeg2000lossless_toshiba_j2k_siz0_pixrep1: "dicom/pylibjpeg/JPEG2000Lossless/TOSHIBA_J2K_SIZ0_PixRep1.dcm" => None, Decodes;
     pylibjpeg_jpeg2000lossless_toshiba_j2k_siz1_pixrep0: "dicom/pylibjpeg/JPEG2000Lossless/TOSHIBA_J2K_SIZ1_PixRep0.dcm" => None, Decodes;
-    wg04_j2ki_ct1_j2ki: "dicom/wg04/J2KI/CT1_J2KI" => Some("dicom/wg04/REF/CT1_UNC"), Psnr(30.0);
-    wg04_j2ki_ct2_j2ki: "dicom/wg04/J2KI/CT2_J2KI" => Some("dicom/wg04/REF/CT2_UNC"), Psnr(30.0);
-    wg04_j2ki_mg1_j2ki: "dicom/wg04/J2KI/MG1_J2KI" => Some("dicom/wg04/REF/MG1_UNC"), Psnr(30.0);
-    wg04_j2ki_mr1_j2ki: "dicom/wg04/J2KI/MR1_J2KI" => Some("dicom/wg04/REF/MR1_UNC"), Psnr(30.0);
+    wg04_j2ki_ct1_j2ki: "dicom/wg04/J2KI/CT1_J2KI" => Some("dicom/wg04/REF/CT1_UNC"), Psnr(63.0);
+    wg04_j2ki_ct2_j2ki: "dicom/wg04/J2KI/CT2_J2KI" => Some("dicom/wg04/REF/CT2_UNC"), Psnr(65.0);
+    wg04_j2ki_mg1_j2ki: "dicom/wg04/J2KI/MG1_J2KI" => Some("dicom/wg04/REF/MG1_UNC"), Psnr(49.0);
+    wg04_j2ki_mr1_j2ki: "dicom/wg04/J2KI/MR1_J2KI" => Some("dicom/wg04/REF/MR1_UNC"), Psnr(61.0);
     wg04_j2ki_mr2_j2ki: "dicom/wg04/J2KI/MR2_J2KI" => Some("dicom/pydicom/MR2_UNCI.dcm"), MaxAbs(1);
-    wg04_j2ki_mr3_j2ki: "dicom/wg04/J2KI/MR3_J2KI" => Some("dicom/wg04/REF/MR3_UNC"), Psnr(30.0);
-    wg04_j2ki_mr4_j2ki: "dicom/wg04/J2KI/MR4_J2KI" => Some("dicom/wg04/REF/MR4_UNC"), Psnr(30.0);
-    wg04_j2ki_nm1_j2ki: "dicom/wg04/J2KI/NM1_J2KI" => Some("dicom/wg04/REF/NM1_UNC"), Psnr(30.0);
+    wg04_j2ki_mr3_j2ki: "dicom/wg04/J2KI/MR3_J2KI" => Some("dicom/wg04/REF/MR3_UNC"), Psnr(64.0);
+    wg04_j2ki_mr4_j2ki: "dicom/wg04/J2KI/MR4_J2KI" => Some("dicom/wg04/REF/MR4_UNC"), Psnr(58.0);
+    wg04_j2ki_nm1_j2ki: "dicom/wg04/J2KI/NM1_J2KI" => Some("dicom/wg04/REF/NM1_UNC"), Psnr(78.0);
     wg04_j2ki_rg1_j2ki: "dicom/wg04/J2KI/RG1_J2KI" => Some("dicom/pydicom/RG1_UNCI.dcm"), MaxAbs(1);
-    wg04_j2ki_rg2_j2ki: "dicom/wg04/J2KI/RG2_J2KI" => Some("dicom/wg04/REF/RG2_UNC"), Psnr(30.0);
+    wg04_j2ki_rg2_j2ki: "dicom/wg04/J2KI/RG2_J2KI" => Some("dicom/wg04/REF/RG2_UNC"), Psnr(53.0);
     wg04_j2ki_rg3_j2ki: "dicom/wg04/J2KI/RG3_J2KI" => Some("dicom/pydicom/RG3_UNCI.dcm"), MaxAbs(1);
-    wg04_j2ki_sc1_j2ki: "dicom/wg04/J2KI/SC1_J2KI" => Some("dicom/wg04/REF/SC1_UNC"), Psnr(30.0);
-    wg04_j2ki_us1_j2ki: "dicom/wg04/J2KI/US1_J2KI" => Some("dicom/wg04/REF/US1_UNC"), Psnr(30.0);
-    wg04_j2ki_vl1_j2ki: "dicom/wg04/J2KI/VL1_J2KI" => Some("dicom/wg04/REF/VL1_UNC"), Psnr(30.0);
-    wg04_j2ki_vl2_j2ki: "dicom/wg04/J2KI/VL2_J2KI" => Some("dicom/wg04/REF/VL2_UNC"), Psnr(30.0);
-    wg04_j2ki_vl3_j2ki: "dicom/wg04/J2KI/VL3_J2KI" => Some("dicom/wg04/REF/VL3_UNC"), Psnr(30.0);
-    wg04_j2ki_vl4_j2ki: "dicom/wg04/J2KI/VL4_J2KI" => Some("dicom/wg04/REF/VL4_UNC"), Psnr(30.0);
-    wg04_j2ki_vl5_j2ki: "dicom/wg04/J2KI/VL5_J2KI" => Some("dicom/wg04/REF/VL5_UNC"), Psnr(30.0);
-    wg04_j2ki_vl6_j2ki: "dicom/wg04/J2KI/VL6_J2KI" => Some("dicom/wg04/REF/VL6_UNC"), Psnr(30.0);
-    wg04_j2ki_xa1_j2ki: "dicom/wg04/J2KI/XA1_J2KI" => Some("dicom/wg04/REF/XA1_UNC"), Psnr(30.0);
+    wg04_j2ki_sc1_j2ki: "dicom/wg04/J2KI/SC1_J2KI" => Some("dicom/wg04/REF/SC1_UNC"), Psnr(58.0);
+    wg04_j2ki_us1_j2ki: "dicom/wg04/J2KI/US1_J2KI" => Some("dicom/wg04/REF/US1_UNC"), Psnr(35.0);
+    wg04_j2ki_vl1_j2ki: "dicom/wg04/J2KI/VL1_J2KI" => Some("dicom/wg04/REF/VL1_UNC"), Psnr(39.0);
+    wg04_j2ki_vl2_j2ki: "dicom/wg04/J2KI/VL2_J2KI" => Some("dicom/wg04/REF/VL2_UNC"), Psnr(38.0);
+    wg04_j2ki_vl3_j2ki: "dicom/wg04/J2KI/VL3_J2KI" => Some("dicom/wg04/REF/VL3_UNC"), Psnr(38.0);
+    wg04_j2ki_vl4_j2ki: "dicom/wg04/J2KI/VL4_J2KI" => Some("dicom/wg04/REF/VL4_UNC"), Psnr(36.0);
+    wg04_j2ki_vl5_j2ki: "dicom/wg04/J2KI/VL5_J2KI" => Some("dicom/wg04/REF/VL5_UNC"), Psnr(28.0);
+    wg04_j2ki_vl6_j2ki: "dicom/wg04/J2KI/VL6_J2KI" => Some("dicom/wg04/REF/VL6_UNC"), Psnr(31.0);
+    wg04_j2ki_xa1_j2ki: "dicom/wg04/J2KI/XA1_J2KI" => Some("dicom/wg04/REF/XA1_UNC"), Psnr(54.0);
     wg04_j2kr_ct1_j2kr: "dicom/wg04/J2KR/CT1_J2KR" => Some("dicom/wg04/REF/CT1_UNC"), Exact;
     wg04_j2kr_ct2_j2kr: "dicom/wg04/J2KR/CT2_J2KR" => Some("dicom/wg04/REF/CT2_UNC"), Exact;
     wg04_j2kr_mg1_j2kr: "dicom/wg04/J2KR/MG1_J2KR" => Some("dicom/wg04/REF/MG1_UNC"), Exact;
