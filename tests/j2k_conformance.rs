@@ -326,7 +326,10 @@ fn corrupted_codestreams_do_not_panic() {
         for cut in (0..data.len()).step_by((data.len() / 25).max(1)) {
             let _ = decode_components(&data[..cut], &opts);
         }
-        let iters: usize = std::env::var("DICOM_JPEG_FUZZ_ITERS").ok().and_then(|v| v.parse().ok()).unwrap_or(25);
+        let iters: usize = std::env::var("DICOM_JPEG_FUZZ_ITERS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(25);
         for _ in 0..iters {
             let mut d = data.clone();
             for _ in 0..1 + rnd() % 6 {

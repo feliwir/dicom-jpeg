@@ -60,7 +60,7 @@ cases!(ready, "jpeg-ls", {
 });
 
 // ---- JPEG 2000 (15444-1 / -2) ------------------------------------------------------
-cases!(pending, "jpeg2000", {
+cases!(ready, "jpeg2000", {
     j2k_lossless_ct1: "dicom/wg04/REF/CT1_UNC" => Jpeg2000Lossless, None, Exact;
     j2k_lossless_mr2: "dicom/wg04/REF/MR2_UNC" => Jpeg2000Lossless, None, Exact;
     j2k_lossless_rg1: "dicom/wg04/REF/RG1_UNC" => Jpeg2000Lossless, None, Exact;

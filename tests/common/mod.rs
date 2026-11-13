@@ -397,6 +397,17 @@ pub fn check_roundtrip(reference: &str, ts: TransferSyntax, quality: Option<u8>,
     let mut file = Vec::new();
     obj.write_all(&mut file)
         .unwrap_or_else(|e| panic!("{reference} -> {ts}: writing DICOM failed: {e}"));
+    if let Some(dir) = pnm::dump_dir() {
+        // Keep the encoded DICOM file for inspection with other tools.
+        let stem = Path::new(reference)
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        let path = dir.join("roundtrip").join(format!("{stem}__{ts:?}.dcm"));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &file).unwrap();
+    }
     let reread = OpenFileOptions::new()
         .from_reader(&file[..])
         .unwrap_or_else(|e| panic!("{reference} -> {ts}: re-reading DICOM failed: {e}"));

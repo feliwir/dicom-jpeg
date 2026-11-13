@@ -92,3 +92,7 @@ required-features = ["dicom"]
 [[test]]
 name = "j2k_conformance"
 required-features = ["jpeg2000", "dicom"]
+
+[[test]]
+name = "j2k_encoder"
+required-features = ["jpeg2000", "encode"]
