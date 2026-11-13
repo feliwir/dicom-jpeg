@@ -1,0 +1,50 @@
+[package]
+name = "dicom-jpeg-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+dicom-jpeg = { path = "..", default-features = false, features = ["jpeg", "jpeg-ls", "jpeg2000", "htj2k", "jpeg-xl"] }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "jpeg_decode"
+path = "fuzz_targets/jpeg_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "jpegls_decode"
+path = "fuzz_targets/jpegls_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "j2k_decode"
+path = "fuzz_targets/j2k_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "htj2k_decode"
+path = "fuzz_targets/htj2k_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "jxl_decode"
+path = "fuzz_targets/jxl_decode.rs"
+test = false
+doc = false
+bench = false
