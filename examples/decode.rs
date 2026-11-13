@@ -1,7 +1,7 @@
 //! Decode DICOM files or raw codestreams to PGM / PPM for viewing.
 //!
 //! ```sh
-//! cargo run --example decode -- <input>... [-o <dir>]
+//! cargo run --example decode -- <input>... [-o <dir>] [--raw]
 //! cargo run --example decode -- testdata/dicom/wg04/JPLY/MR2_JPLY
 //! cargo run --example decode -- testdata/conformance/t81/w3/*.jpg -o /tmp/out
 //! ```
@@ -10,7 +10,12 @@
 //! (output is what a dicom-rs application would see: RGB for colour images).
 //! Raw codestreams are recognised by their signature (JPEG, JPEG-LS,
 //! JPEG 2000 / HTJ2K, JPEG XL). Output goes to `decoded/` (git-ignored) unless
-//! `-o` is given; images wider than 8 bits are written as 16-bit PNM.
+//! `-o` is given.
+//!
+//! By default images are written for viewing: 8-bit, with the DICOM rescale,
+//! window (or an automatic contrast stretch) and MONOCHROME1 inversion
+//! applied. `--raw` writes the exact decoded sample values instead (16-bit PNM
+//! above 8 bits; negative values as two's complement bit patterns).
 
 #[path = "../tests/common/pnm.rs"]
 mod pnm;
@@ -54,7 +59,7 @@ fn to_i32(samples: &Samples) -> Vec<i32> {
     }
 }
 
-fn decode_dicom(input: &Path, out_dir: &Path, stem: &str) -> BoxResult<Vec<PathBuf>> {
+fn decode_dicom(input: &Path, out_dir: &Path, stem: &str, raw: bool) -> BoxResult<Vec<PathBuf>> {
     let obj = dicom_object::OpenFileOptions::new().open_file(input)?;
     let uid = obj
         .meta()
@@ -72,6 +77,7 @@ fn decode_dicom(input: &Path, out_dir: &Path, stem: &str) -> BoxResult<Vec<PathB
     let bits_stored = int(tags::BITS_STORED).unwrap_or(bits_allocated);
     let signed = int(tags::PIXEL_REPRESENTATION).unwrap_or(0) == 1;
     let frames = int(tags::NUMBER_OF_FRAMES).unwrap_or(1).max(1);
+    let voi = pnm::voi_from_dicom(&obj);
     eprintln!(
         "{}: {} ({cols}x{rows}, {spp} samples, {bits_stored} bits{}, {frames} frame(s))",
         input.display(),
@@ -109,20 +115,30 @@ fn decode_dicom(input: &Path, out_dir: &Path, stem: &str) -> BoxResult<Vec<PathB
         } else {
             stem.to_string()
         };
+        let (bits, samples) = if raw {
+            (bits_stored, samples)
+        } else {
+            (8, pnm::to_display(&samples, spp, bits_stored, &voi))
+        };
         written.extend(pnm::write_pnm(
             &out_dir.join(name),
             cols,
             rows,
             spp,
-            bits_stored,
-            signed,
+            bits,
             &samples,
         )?);
     }
     Ok(written)
 }
 
-fn decode_raw(input: &Path, data: &[u8], out_dir: &Path, stem: &str) -> BoxResult<Vec<PathBuf>> {
+fn decode_raw(
+    input: &Path,
+    data: &[u8],
+    out_dir: &Path,
+    stem: &str,
+    raw: bool,
+) -> BoxResult<Vec<PathBuf>> {
     let ts = sniff(data).ok_or("unknown file format (not DICOM or a known codestream)")?;
     let opts = DecodeOptions::new().with_color_output(ColorOutput::Rgb);
     let img = dicom_jpeg::decode(ts, data, &opts)?;
@@ -137,14 +153,20 @@ fn decode_raw(input: &Path, data: &[u8], out_dir: &Path, stem: &str) -> BoxResul
         i.bits_per_sample,
         i.color_space
     );
+    let (nc, bits) = (i.components as usize, i.bits_per_sample as u32);
+    let samples = to_i32(&img.samples);
+    let (bits, samples) = if raw {
+        (bits, samples)
+    } else {
+        (8, pnm::to_display(&samples, nc, bits, &pnm::Voi::default()))
+    };
     Ok(pnm::write_pnm(
         &out_dir.join(stem),
         i.width as usize,
         i.height as usize,
-        i.components as usize,
-        i.bits_per_sample as u32,
-        i.signed,
-        &to_i32(&img.samples),
+        nc,
+        bits,
+        &samples,
     )?)
 }
 
@@ -152,18 +174,20 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let mut inputs = Vec::new();
     let mut out_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("decoded");
+    let mut raw = false;
     while let Some(a) = args.next() {
         match a.as_str() {
             "-o" | "--out" => out_dir = PathBuf::from(args.next().expect("-o needs a directory")),
+            "--raw" => raw = true,
             "-h" | "--help" => {
-                eprintln!("usage: decode <input>... [-o <dir>]");
+                eprintln!("usage: decode <input>... [-o <dir>] [--raw]");
                 return;
             }
             _ => inputs.push(PathBuf::from(a)),
         }
     }
     if inputs.is_empty() {
-        eprintln!("usage: decode <input>... [-o <dir>]");
+        eprintln!("usage: decode <input>... [-o <dir>] [--raw]");
         std::process::exit(2);
     }
     let mut failed = false;
@@ -172,9 +196,9 @@ fn main() {
         let result = std::fs::read(input).map_err(Into::into).and_then(|data| {
             let is_dicom = data.get(128..132) == Some(b"DICM");
             if is_dicom {
-                decode_dicom(input, &out_dir, &stem)
+                decode_dicom(input, &out_dir, &stem, raw)
             } else {
-                decode_raw(input, &data, &out_dir, &stem)
+                decode_raw(input, &data, &out_dir, &stem, raw)
             }
         });
         match result {

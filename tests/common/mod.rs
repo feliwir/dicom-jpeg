@@ -77,6 +77,8 @@ pub struct Attrs {
     pub bits_stored: u32,
     pub signed: bool,
     pub frames: u32,
+    /// Display transform (rescale, window, MONOCHROME1) for dumped images.
+    pub voi: pnm::Voi,
 }
 
 pub fn attrs(obj: &DefaultDicomObject) -> Attrs {
@@ -92,6 +94,7 @@ pub fn attrs(obj: &DefaultDicomObject) -> Attrs {
             .and_then(|e| e.to_int::<u32>().ok())
             .unwrap_or(1)
             .max(1),
+        voi: pnm::voi_from_dicom(obj),
     }
 }
 
@@ -187,15 +190,17 @@ pub fn jls_near(codestream: &[u8]) -> u32 {
     panic!("no SOS marker found in JPEG-LS codestream")
 }
 
-/// Write one decoded frame below the dump folder when `DICOM_JPEG_DUMP` is set
-/// (see [`pnm::dump_dir`]).
+/// Write one frame below the dump folder when `DICOM_JPEG_DUMP` is set
+/// (see [`pnm::dump_dir`]). With `display`, the samples are mapped to a
+/// viewable 8-bit image using the object's rescale / window / MONOCHROME1
+/// attributes; otherwise they are written as-is with `bits` bits.
 pub fn dump_frame(
     name: &str,
     frame: usize,
     frames: usize,
     a: Attrs,
     bits: u32,
-    signed: bool,
+    display: bool,
     samples: &[i32],
 ) {
     let Some(dir) = pnm::dump_dir() else { return };
@@ -204,14 +209,18 @@ pub fn dump_frame(
         file.push_str(&format!("_f{frame:03}"));
     }
     let path = dir.join(file);
+    let (bits, samples) = if display {
+        (8, pnm::to_display(samples, a.spp as usize, bits, &a.voi))
+    } else {
+        (bits, samples.to_vec())
+    };
     let written = pnm::write_pnm(
         &path,
         a.cols as usize,
         a.rows as usize,
         a.spp as usize,
         bits,
-        signed,
-        samples,
+        &samples,
     )
     .unwrap_or_else(|e| panic!("cannot write {}: {e}", path.display()));
     for p in written {
@@ -253,7 +262,7 @@ pub fn compare(
             .unwrap_or(0);
         let p = psnr(&d, &r, bits);
         eprintln!("{name}: frame {f}: max |err| = {max_abs}, PSNR = {p:.2} dB");
-        dump_frame(dump_as, f, decoded.len(), dec, bits, signed, &d);
+        dump_frame(dump_as, f, decoded.len(), dec, bits, true, &d);
         if max_abs > 0 {
             // Difference image, normalised so the largest error is white.
             let diff: Vec<i32> = d
@@ -325,7 +334,7 @@ pub fn check_decode(rel: &str, reference: Option<&str>, expect: Expect) {
                 decoded.len(),
                 a,
                 a.bits_stored,
-                a.signed,
+                true,
                 &v,
             );
         }

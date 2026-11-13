@@ -10,7 +10,8 @@ use std::path::Path;
 /// Write interleaved samples as binary PGM (1 component) or PPM (3 components).
 /// Other component counts are written as one PGM per component
 /// (`<stem>_c<N>.pgm`). Samples wider than 8 bits are written as 16-bit
-/// big-endian PNM. Signed samples are offset by 2^(bits-1) for display.
+/// big-endian PNM; negative values are written as their `bits`-wide two's
+/// complement pattern (use [`to_display`] first for viewable images).
 /// Returns the files written.
 pub fn write_pnm(
     path: &Path,
@@ -18,13 +19,11 @@ pub fn write_pnm(
     height: usize,
     components: usize,
     bits: u32,
-    signed: bool,
     samples: &[i32],
 ) -> std::io::Result<Vec<std::path::PathBuf>> {
     let bits = bits.clamp(1, 16);
     let maxval = (1u32 << bits) - 1;
-    let offset = if signed { 1i64 << (bits - 1) } else { 0 };
-    let to_u = |v: i32| (v as i64 + offset).clamp(0, maxval as i64) as u32;
+    let to_u = |v: i32| v as u32 & maxval;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -102,4 +101,88 @@ pub fn slug_path(name: &str) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// Value-of-interest transform used to make images viewable, following the
+/// DICOM grayscale pipeline (PS3.4 C.11): Modality LUT (rescale), VOI LUT
+/// (window), Presentation (MONOCHROME1 inversion).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Voi {
+    /// (Rescale Slope, Rescale Intercept)
+    pub rescale: (f64, f64),
+    /// (Window Center, Window Width) if present
+    pub window: Option<(f64, f64)>,
+    /// MONOCHROME1: low values are white
+    pub invert: bool,
+}
+
+impl Default for Voi {
+    fn default() -> Self {
+        Voi {
+            rescale: (1.0, 0.0),
+            window: None,
+            invert: false,
+        }
+    }
+}
+
+/// Read rescale / window / photometric attributes (first value of multi-valued ones).
+pub fn voi_from_dicom(obj: &dicom_object::DefaultDicomObject) -> Voi {
+    use dicom_dictionary_std::tags;
+    let first = |tag| -> Option<f64> {
+        let s = obj.get(tag)?.to_str().ok()?;
+        s.split('\\').next()?.trim().parse().ok()
+    };
+    let window = match (first(tags::WINDOW_CENTER), first(tags::WINDOW_WIDTH)) {
+        (Some(c), Some(w)) if w >= 1.0 => Some((c, w)),
+        _ => None,
+    };
+    let pi = obj
+        .get(tags::PHOTOMETRIC_INTERPRETATION)
+        .and_then(|e| e.to_str().ok().map(|s| s.trim().to_string()))
+        .unwrap_or_default();
+    Voi {
+        rescale: (
+            first(tags::RESCALE_SLOPE).unwrap_or(1.0),
+            first(tags::RESCALE_INTERCEPT).unwrap_or(0.0),
+        ),
+        window,
+        invert: pi == "MONOCHROME1",
+    }
+}
+
+/// Map samples to 8-bit display values. Grayscale images get the rescale,
+/// the window (or an automatic 0.5 %..99.5 % stretch when there is none) and
+/// MONOCHROME1 inversion; colour samples are scaled from `bits` to 8 bits.
+pub fn to_display(samples: &[i32], components: usize, bits: u32, voi: &Voi) -> Vec<i32> {
+    if components != 1 {
+        let shift = bits.saturating_sub(8);
+        return samples
+            .iter()
+            .map(|&v| (v.max(0) >> shift).min(255))
+            .collect();
+    }
+    let (slope, intercept) = voi.rescale;
+    let values: Vec<f64> = samples
+        .iter()
+        .map(|&v| v as f64 * slope + intercept)
+        .collect();
+    let (lo, hi) = match voi.window {
+        // Linear VOI function (PS3.3 C.11.2.1.2.1).
+        Some((c, w)) => (c - 0.5 - (w - 1.0) / 2.0, c - 0.5 + (w - 1.0) / 2.0),
+        None => {
+            let mut sorted = values.clone();
+            sorted.sort_by(f64::total_cmp);
+            let at = |q: f64| sorted[((sorted.len() - 1) as f64 * q) as usize];
+            (at(0.005), at(0.995))
+        }
+    };
+    let span = (hi - lo).max(1e-9);
+    values
+        .iter()
+        .map(|&x| {
+            let y = (((x - lo) / span) * 255.0).round().clamp(0.0, 255.0) as i32;
+            if voi.invert { 255 - y } else { y }
+        })
+        .collect()
 }
