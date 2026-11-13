@@ -1,0 +1,43 @@
+[package]
+name = "dicom-jpeg"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+description = "Pure-Rust JPEG-family codecs (JPEG, JPEG-LS, JPEG 2000, HTJ2K, JPEG XL) covering all active DICOM transfer syntaxes"
+keywords = ["dicom", "jpeg", "jpeg2000", "jpeg-ls", "jpeg-xl"]
+categories = ["compression", "multimedia::images"]
+exclude = ["testdata/", "fuzz/"]
+
+[features]
+default = ["jpeg", "jpeg-ls", "jpeg2000", "htj2k", "jpeg-xl", "encode"]
+# ITU-T T.81: 1.2.840.10008.1.2.4.50 / .51 / .57 / .70
+jpeg = []
+# ITU-T T.87: .80 / .81
+jpeg-ls = []
+# ISO/IEC 15444-1: .90 / .91
+jpeg2000 = []
+# ISO/IEC 15444-2 multi-component transforms: .92 / .93
+jpeg2000-part2 = ["jpeg2000"]
+# ISO/IEC 15444-15 High-Throughput JPEG 2000: .201 / .202 / .203
+htj2k = ["jpeg2000"]
+# ISO/IEC 18181: .110 / .112 (.111 JPEG recompression additionally needs "jpeg")
+jpeg-xl = []
+# Enable encoders (decoders are always available for enabled codecs)
+encode = []
+# Data parallelism (tiles, code-blocks, frames)
+parallel = ["dep:rayon"]
+
+[dependencies]
+rayon = { version = "1.10", optional = true }
+
+[profile.test]
+opt-level = 2
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"
+
