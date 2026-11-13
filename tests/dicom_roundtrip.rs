@@ -24,7 +24,7 @@ macro_rules! cases {
 //   SC_rgb 100x100 RGB 8 bit         SC_rgb_small_odd 3x3 RGB    emri_small 64x64x10 frames 12 bit
 
 // ---- JPEG (T.81) -------------------------------------------------------------
-cases!(pending, "jpeg", {
+cases!(ready, "jpeg", {
     jpeg_baseline_us1: "dicom/wg04/REF/US1_UNC" => JpegBaseline, Some(90), Psnr(30.0);
     jpeg_baseline_vl1: "dicom/wg04/REF/VL1_UNC" => JpegBaseline, Some(90), Psnr(30.0);
     jpeg_baseline_sc_rgb: "dicom/pydicom/SC_rgb.dcm" => JpegBaseline, Some(90), Psnr(30.0);

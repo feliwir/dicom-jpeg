@@ -68,3 +68,7 @@ required-features = ["dicom"]
 [[test]]
 name = "jpeg_conformance"
 required-features = ["jpeg", "dicom"]
+
+[[test]]
+name = "jpeg_encoder"
+required-features = ["jpeg", "encode"]
