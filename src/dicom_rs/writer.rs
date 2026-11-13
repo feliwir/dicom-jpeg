@@ -100,8 +100,15 @@ impl PixelDataWriter for PixelAdapter {
             signed: false,
             color_space,
         };
-        let image = Image::from_le_bytes(info, &native, usize::from(bits_allocated / 8))
+        let mut image = Image::from_le_bytes(info, &native, usize::from(bits_allocated / 8))
             .map_err(codec_encode_error)?;
+        // `PixelDataObject` does not expose Pixel Representation. JPEG 2000
+        // signals signedness in the codestream and lossy coding needs it (a
+        // two's complement image read as unsigned has huge artificial edges),
+        // so infer it from the data.
+        if matches!(self.ts.codec(), Codec::Jpeg2000 | Codec::HtJ2k) && looks_signed(&image) {
+            image.info.signed = true;
+        }
         let mut opts = crate::EncodeOptions::new();
         opts.quality = options.quality;
         opts.effort = options.effort;
@@ -149,4 +156,29 @@ impl PixelDataWriter for PixelAdapter {
         }
         Ok(ops)
     }
+}
+
+/// Whether a single-component image is much smoother when its samples are
+/// read as two's complement (i.e. it is most likely signed data).
+fn looks_signed(image: &Image) -> bool {
+    let info = &image.info;
+    if info.components != 1 || info.bits_per_sample < 2 {
+        return false;
+    }
+    let bits = info.bits_per_sample as u32;
+    let half = 1i64 << (bits - 1);
+    let values: Vec<i64> = match &image.samples {
+        crate::Samples::U8(v) => v.iter().map(|&x| x as i64).collect(),
+        crate::Samples::U16(v) => v.iter().map(|&x| x as i64).collect(),
+    };
+    let as_signed = |v: i64| if v >= half { v - 2 * half } else { v };
+    let w = info.width as usize;
+    let (mut tv_unsigned, mut tv_signed) = (0i64, 0i64);
+    for row in values.chunks(w).step_by(4) {
+        for p in row.windows(2) {
+            tv_unsigned += (p[1] - p[0]).abs();
+            tv_signed += (as_signed(p[1]) - as_signed(p[0])).abs();
+        }
+    }
+    tv_signed * 2 < tv_unsigned
 }
