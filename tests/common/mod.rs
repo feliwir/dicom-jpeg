@@ -4,6 +4,8 @@
 
 #![allow(dead_code)]
 
+pub mod pnm;
+
 use std::path::{Path, PathBuf};
 
 #[cfg(feature = "encode")]
@@ -185,9 +187,50 @@ pub fn jls_near(codestream: &[u8]) -> u32 {
     panic!("no SOS marker found in JPEG-LS codestream")
 }
 
-/// Compare decoded frames against reference frames.
+/// Write one decoded frame below the dump folder when `DICOM_JPEG_DUMP` is set
+/// (see [`pnm::dump_dir`]).
+pub fn dump_frame(
+    name: &str,
+    frame: usize,
+    frames: usize,
+    a: Attrs,
+    bits: u32,
+    signed: bool,
+    samples: &[i32],
+) {
+    let Some(dir) = pnm::dump_dir() else { return };
+    let mut file = pnm::slug_path(name);
+    if frames > 1 {
+        file.push_str(&format!("_f{frame:03}"));
+    }
+    let path = dir.join(file);
+    let written = pnm::write_pnm(
+        &path,
+        a.cols as usize,
+        a.rows as usize,
+        a.spp as usize,
+        bits,
+        signed,
+        samples,
+    )
+    .unwrap_or_else(|e| panic!("cannot write {}: {e}", path.display()));
+    for p in written {
+        eprintln!("wrote {}", p.display());
+    }
+}
+
+/// Dump location of a decoded test file: `decode/<set>/<file>`.
+fn decode_dump_name(rel: &str) -> String {
+    let rel = rel.strip_prefix("dicom/").unwrap_or(rel);
+    format!("decode/{}", rel.strip_suffix(".dcm").unwrap_or(rel))
+}
+
+/// Compare decoded frames against reference frames; `dump_as` names the
+/// images written when `DICOM_JPEG_DUMP` is set.
+#[allow(clippy::too_many_arguments)]
 pub fn compare(
     name: &str,
+    dump_as: &str,
     decoded: &[Vec<u8>],
     reference: &[Vec<u8>],
     dec: Attrs,
@@ -210,6 +253,24 @@ pub fn compare(
             .unwrap_or(0);
         let p = psnr(&d, &r, bits);
         eprintln!("{name}: frame {f}: max |err| = {max_abs}, PSNR = {p:.2} dB");
+        dump_frame(dump_as, f, decoded.len(), dec, bits, signed, &d);
+        if max_abs > 0 {
+            // Difference image, normalised so the largest error is white.
+            let diff: Vec<i32> = d
+                .iter()
+                .zip(&r)
+                .map(|(&a, &b)| ((a - b).unsigned_abs() * 255 / max_abs) as i32)
+                .collect();
+            dump_frame(
+                &format!("{dump_as}_diff"),
+                f,
+                decoded.len(),
+                dec,
+                8,
+                false,
+                &diff,
+            );
+        }
         match expect {
             Expect::Exact => {
                 if let Some(i) = d.iter().zip(&r).position(|(a, b)| a != b) {
@@ -256,6 +317,18 @@ pub fn check_decode(rel: &str, reference: Option<&str>, expect: Expect) {
         assert_eq!(d.len(), frame_bytes, "{rel}: frame {f}: decoded size");
     }
     if let Expect::Decodes = expect {
+        for (f, d) in decoded.iter().enumerate() {
+            let v = samples(d, a.bits_allocated, a.bits_stored, a.signed);
+            dump_frame(
+                &decode_dump_name(rel),
+                f,
+                decoded.len(),
+                a,
+                a.bits_stored,
+                a.signed,
+                &v,
+            );
+        }
         return;
     }
     let reference = reference.unwrap_or_else(|| panic!("{rel}: expectation needs a reference"));
@@ -272,7 +345,16 @@ pub fn check_decode(rel: &str, reference: Option<&str>, expect: Expect) {
             .expect("frame codestream");
         jls_near(&data)
     };
-    compare(rel, &decoded, &ref_frames, a, ra, expect, codec_data);
+    compare(
+        rel,
+        &decode_dump_name(rel),
+        &decoded,
+        &ref_frames,
+        a,
+        ra,
+        expect,
+        codec_data,
+    );
 }
 
 /// Encode the native object `reference` to `ts` through the adapter, write it
@@ -329,7 +411,12 @@ pub fn check_roundtrip(reference: &str, ts: TransferSyntax, quality: Option<u8>,
             .expect("frame codestream");
         jls_near(&data)
     };
-    compare(&name, &decoded, &ref_frames, ra, oa, expect, near);
+    let stem = Path::new(reference)
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy();
+    let dump_as = format!("roundtrip/{stem}__{ts:?}");
+    compare(&name, &dump_as, &decoded, &ref_frames, ra, oa, expect, near);
 }
 
 /// Generate one `#[test]` per case. The first token is the codec gate: a
