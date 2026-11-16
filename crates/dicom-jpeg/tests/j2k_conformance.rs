@@ -355,7 +355,7 @@ fn all_iso_files_decode_or_fail_cleanly() {
         "codestreams_extended",
         "codestreams_hifi",
     ] {
-        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        let base = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
             .join("testdata")
             .join(ROOT)
             .join(dir);
@@ -437,7 +437,7 @@ fn bset_stats(text: &str) -> BsetStats {
 /// the peak / MSE of the transcoding published in the set's stats file.
 #[test]
 fn htj2k_bsets() {
-    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let base = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
         .join("testdata")
         .join(ROOT);
     let mut failures = Vec::new();
@@ -550,7 +550,7 @@ fn htj2k_bsets() {
 #[test]
 #[cfg(feature = "jpeg2000-part2")]
 fn part2_multiple_component_transforms() {
-    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let base = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
         .join("testdata")
         .join(ROOT);
     for (name, ncomp) in [("mct1", 60usize), ("mct2", 180), ("mct3o", 3)] {

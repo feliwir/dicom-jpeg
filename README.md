@@ -20,7 +20,7 @@ Other features:
 
 ## Crates
 
-The repository is a cargo workspace. `dicom-jpeg` (the root package) is the
+The repository is a virtual cargo workspace. `crates/dicom-jpeg` is the
 facade: it re-exports the crates below behind the features above (the
 adapter as `dicom_jpeg::dicom_rs`) and dispatches decoding by `Codec`. It
 also holds the integration tests, fuzz targets and test data.
@@ -47,8 +47,8 @@ cargo test --all-features             # implemented codecs
 cargo test --all-features -- --ignored  # cases for codecs that are not implemented yet
 ```
 
-`tests/dicom_decode.rs` decodes every NEMA WG04, pydicom and pylibjpeg file through the dicom-rs adapter and compares it with the uncompressed reference.
-`tests/dicom_roundtrip.rs` encodes native references, writes and re-reads a DICOM file with dicom-rs, then decodes and compares the result.
+`crates/dicom-jpeg/tests/dicom_decode.rs` decodes every NEMA WG04, pydicom and pylibjpeg file through the dicom-rs adapter and compares it with the uncompressed reference.
+`crates/dicom-jpeg/tests/dicom_roundtrip.rs` encodes native references, writes and re-reads a DICOM file with dicom-rs, then decodes and compares the result.
 
 ## License
 

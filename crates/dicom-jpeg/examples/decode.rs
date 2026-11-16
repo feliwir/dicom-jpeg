@@ -167,7 +167,7 @@ fn decode_raw(
 fn main() {
     let mut args = std::env::args().skip(1);
     let mut inputs = Vec::new();
-    let mut out_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("decoded");
+    let mut out_dir = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join("decoded");
     let mut raw = false;
     while let Some(a) = args.next() {
         match a.as_str() {

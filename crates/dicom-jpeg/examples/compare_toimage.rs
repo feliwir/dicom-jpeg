@@ -300,7 +300,7 @@ fn collect(path: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn main() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let mut bin = PathBuf::from("dicom-toimage");
     let mut inputs = Vec::new();
     let mut args = std::env::args().skip(1);

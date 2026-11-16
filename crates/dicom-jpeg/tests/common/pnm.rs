@@ -68,7 +68,7 @@ pub fn write_pnm(
 /// (`1` selects the default `decoded/` folder of the crate), or `None` when unset.
 pub fn dump_dir() -> Option<std::path::PathBuf> {
     let v = std::env::var_os("DICOM_JPEG_DUMP")?;
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     if v.is_empty() || v == "0" {
         return None;
     }

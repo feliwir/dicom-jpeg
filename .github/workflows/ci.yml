@@ -29,7 +29,7 @@ jobs:
       - uses: taiki-e/install-action@cargo-hack
       - uses: Swatinem/rust-cache@v2
       - run: cargo hack check --workspace --each-feature --no-dev-deps
-      - run: cargo hack check --all-targets --feature-powerset --depth 2 --exclude-features parallel
+      - run: cargo hack check -p dicom-jpeg --all-targets --feature-powerset --depth 2 --exclude-features parallel
 
   test:
     runs-on: ubuntu-latest
@@ -49,7 +49,7 @@ jobs:
       - name: Verify test data
         run: cd testdata && sha256sum -c --quiet SHA256SUMS
       - run: cargo test --workspace --all-features
-      - run: cargo test --no-default-features --features dicom,jpeg,encode
+      - run: cargo test -p dicom-jpeg --no-default-features --features dicom,jpeg,encode
 
   msrv:
     runs-on: ubuntu-latest

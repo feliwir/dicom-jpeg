@@ -28,7 +28,7 @@ fn dicom_files() -> Vec<String> {
             }
         }
     }
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata");
+    let base = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join("testdata");
     let mut out = Vec::new();
     walk(&base.join("dicom"), &base, &mut out);
     out.sort();

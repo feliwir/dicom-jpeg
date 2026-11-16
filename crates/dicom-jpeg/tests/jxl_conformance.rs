@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use dicom_jpeg::{DecodeOptions, Samples};
 
 fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/conformance/jxl/testcases")
+    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+        .join("testdata/conformance/jxl/testcases")
 }
 
 /// Decode a PNG reference into (width, height, channels, bit depth, samples).

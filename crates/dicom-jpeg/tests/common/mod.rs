@@ -41,7 +41,7 @@ pub enum Expect {
 /// Absolute path of a file below `testdata/`, verifying it is real data
 /// and not a Git LFS pointer.
 pub fn testdata(rel: &str) -> PathBuf {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
         .join("testdata")
         .join(rel);
     let head = std::fs::read(&path)
