@@ -319,6 +319,9 @@ fn corrupted_codestreams_do_not_panic() {
         "codestreams_profile1/p1_03.j2k",
         "codestreams_profile1/p1_05.j2k",
         "codestreams_profile1/p1_07.j2k",
+        "htj2k_bsets_profile0/p0_02_bset/ds0_ht_02_b11.j2k",
+        "htj2k_bsets_profile0/p0_06_bset/ds0_hm_06_b11.j2k",
+        "htj2k_bsets_profile1/p1_03_bset/ds1_ht_03_b11.j2k",
     ];
     let opts = DecoderOptions::default();
     for f in files {
@@ -382,4 +385,157 @@ fn all_iso_files_decode_or_fail_cleanly() {
         }
     }
     eprintln!("{}", results.join("\n"));
+}
+
+/// Per-component (peak, MSE) limits of a HTJ2K bset, keyed by (B, mixed).
+/// Two layouts occur: one "PEAK, MSE, PSNR" row per component, or a row of
+/// per-component peaks followed by a row of MSEs (last column = max / mean).
+/// Per (B, mixed): per-component (peak, MSE).
+type BsetStats = Vec<((u32, bool), Vec<(i64, f64)>)>;
+
+fn bset_stats(text: &str) -> BsetStats {
+    let mut out: BsetStats = Vec::new();
+    let mut rows: Vec<Vec<f64>> = Vec::new();
+    let flush = |out: &mut BsetStats, rows: &mut Vec<Vec<f64>>| {
+        if let Some(last) = out.last_mut() {
+            if rows.iter().all(|r| r.len() == 3) {
+                last.1 = rows.iter().map(|r| (r[0] as i64, r[1])).collect();
+            } else if rows.len() >= 2 {
+                let n = rows[0].len() - 1;
+                last.1 = (0..n).map(|k| (rows[0][k] as i64, rows[1][k])).collect();
+            }
+        }
+        rows.clear();
+    };
+    for line in text.lines() {
+        let t = line.trim();
+        if let Some(key) = t
+            .strip_prefix("----B=")
+            .and_then(|r| r.strip_suffix("----"))
+        {
+            flush(&mut out, &mut rows);
+            let mixed = key.ends_with("HTMIX");
+            let b: u32 = key.trim_end_matches("HTMIX").trim().parse().unwrap();
+            out.push(((b, mixed), Vec::new()));
+            continue;
+        }
+        let fields: Vec<f64> = t
+            .split(',')
+            .filter_map(|f| f.trim().parse::<f64>().ok())
+            .collect();
+        if !fields.is_empty() && fields.len() == t.split(',').count() {
+            rows.push(fields);
+        }
+    }
+    flush(&mut out, &mut rows);
+    out
+}
+
+/// HTJ2K conformance (15444-4 ed. 4). Every HT codestream was transcoded from
+/// a Part 1 conformance codestream; its decode is compared per component with
+/// the decode of that Part 1 codestream (which itself passes class 1), within
+/// the peak / MSE of the transcoding published in the set's stats file.
+#[test]
+fn htj2k_bsets() {
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("testdata")
+        .join(ROOT);
+    let mut failures = Vec::new();
+    let mut count = 0;
+    for profile in [0, 1] {
+        let dir = base.join(format!("htj2k_bsets_profile{profile}"));
+        let mut sets: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect();
+        sets.sort();
+        for set in sets {
+            let name = set.file_name().unwrap().to_string_lossy().to_string(); // p0_04_bset
+            let num = &name[3..5];
+            let stats =
+                bset_stats(&std::fs::read_to_string(set.join("stats.txt")).unwrap_or_default());
+            let case = CASES
+                .iter()
+                .find(|c| c.stream.ends_with(&format!("p{profile}_{num}.j2k")))
+                .expect("matching Part 1 case");
+            let mut opts = DecoderOptions::default();
+            opts.reduce = case.reduce;
+            let original =
+                std::fs::read(common::testdata(&format!("{ROOT}/{}", case.stream))).unwrap();
+            let part1 = decode_components(&original, &opts).unwrap();
+            let mut files: Vec<_> = std::fs::read_dir(&set)
+                .unwrap()
+                .flatten()
+                .map(|e| e.path())
+                .collect();
+            files.sort();
+            for f in files
+                .iter()
+                .filter(|p| p.extension().is_some_and(|e| e == "j2k"))
+            {
+                let fname = f.file_name().unwrap().to_string_lossy().to_string();
+                let b: u32 = fname
+                    .rsplit("_b")
+                    .next()
+                    .unwrap()
+                    .trim_end_matches(".j2k")
+                    .parse()
+                    .unwrap();
+                let mixed = fname.contains("_hm_");
+                let limits = stats
+                    .iter()
+                    .find(|(k, _)| *k == (b, mixed))
+                    .map(|(_, l)| l.clone())
+                    .unwrap_or_default();
+                count += 1;
+                let comps = match decode_components(&std::fs::read(f).unwrap(), &opts) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        failures.push(format!("{fname}: decode failed: {e}"));
+                        continue;
+                    }
+                };
+                let mut line = format!("{fname}:");
+                let mut ok = comps.len() == part1.len();
+                for (k, (c, r)) in comps.iter().zip(&part1).enumerate() {
+                    if (c.width, c.height) != (r.width, r.height) {
+                        ok = false;
+                        line.push_str(&format!(" c{k} size mismatch"));
+                        continue;
+                    }
+                    let peak = c
+                        .data
+                        .iter()
+                        .zip(&r.data)
+                        .map(|(a, b)| (*a as i64 - *b as i64).abs())
+                        .max()
+                        .unwrap_or(0);
+                    let mse = c
+                        .data
+                        .iter()
+                        .zip(&r.data)
+                        .map(|(a, b)| ((*a - *b) as f64).powi(2))
+                        .sum::<f64>()
+                        / r.data.len() as f64;
+                    let (lp, lm) = limits.get(k).copied().unwrap_or((0, 0.0));
+                    // Kakadu's figures come from its own decoder; reconstruction
+                    // points of heavily quantized data differ slightly.
+                    let pass = peak <= lp + 1 + lp / 50 && mse <= lm * 1.05 + 0.01;
+                    ok &= pass;
+                    line.push_str(&format!(
+                        " c{k} peak {peak}/{lp} mse {mse:.3}/{lm:.3}{}",
+                        if pass { "" } else { " FAIL" }
+                    ));
+                }
+                eprintln!("{line}");
+                if !ok {
+                    failures.push(line);
+                }
+            }
+        }
+    }
+    assert!(count >= 40, "only {count} HT codestreams found");
+    assert!(failures.is_empty(), "failures:\n{}", failures.join("\n"));
 }

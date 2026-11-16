@@ -171,7 +171,7 @@ cases!(ready, "jpeg2000", {
 });
 
 // ---- htj2k ------------------------------------------------------------
-cases!(pending, "htj2k", {
+cases!(ready, "htj2k", {
     pydicom_htj2k_08_rgb: "dicom/pydicom/HTJ2K_08_RGB.dcm" => None, Decodes;
     pydicom_htj2klossless_08_rgb: "dicom/pydicom/HTJ2KLossless_08_RGB.dcm" => None, Decodes;
 });
