@@ -22,6 +22,10 @@ dicom-jpeg-jpeg = { path = "crates/jpeg", version = "0.1.0", default-features = 
 dicom-jpeg-jpegls = { path = "crates/jpegls", version = "0.1.0", default-features = false }
 dicom-jpeg-j2k = { path = "crates/j2k", version = "0.1.0", default-features = false }
 dicom-jpeg-jxl = { path = "crates/jxl", version = "0.1.0", default-features = false }
+dicom-jpeg-dicom = { path = "crates/dicom", version = "0.1.0", default-features = false }
+dicom-core = "0.10.1"
+dicom-dictionary-std = "0.10.1"
+dicom-encoding = "0.10.1"
 
 [package]
 name = "dicom-jpeg"
@@ -38,26 +42,27 @@ repository.workspace = true
 [features]
 default = ["jpeg", "jpeg-ls", "jpeg2000", "htj2k", "jpeg-xl", "encode", "dicom"]
 # ITU-T T.81: 1.2.840.10008.1.2.4.50 / .51 / .57 / .70
-jpeg = ["dep:dicom-jpeg-jpeg"]
+jpeg = ["dep:dicom-jpeg-jpeg", "dicom-jpeg-dicom?/jpeg"]
 # ITU-T T.87: .80 / .81
-jpeg-ls = ["dep:dicom-jpeg-jpegls"]
+jpeg-ls = ["dep:dicom-jpeg-jpegls", "dicom-jpeg-dicom?/jpeg-ls"]
 # ISO/IEC 15444-1: .90 / .91
-jpeg2000 = ["dep:dicom-jpeg-j2k"]
+jpeg2000 = ["dep:dicom-jpeg-j2k", "dicom-jpeg-dicom?/jpeg2000"]
 # ISO/IEC 15444-2 multi-component transforms: .92 / .93
-jpeg2000-part2 = ["jpeg2000", "dicom-jpeg-j2k/part2"]
+jpeg2000-part2 = ["jpeg2000", "dicom-jpeg-j2k/part2", "dicom-jpeg-dicom?/jpeg2000-part2"]
 # ISO/IEC 15444-15 High-Throughput JPEG 2000: .201 / .202 / .203
-htj2k = ["jpeg2000", "dicom-jpeg-j2k/htj2k"]
+htj2k = ["jpeg2000", "dicom-jpeg-j2k/htj2k", "dicom-jpeg-dicom?/htj2k"]
 # ISO/IEC 18181: .110 / .112 (.111 JPEG recompression additionally needs "jpeg")
-jpeg-xl = ["dep:dicom-jpeg-jxl"]
+jpeg-xl = ["dep:dicom-jpeg-jxl", "dicom-jpeg-dicom?/jpeg-xl"]
 # Enable encoders (decoders are always available for enabled codecs)
 encode = [
     "dicom-jpeg-jpeg?/encode",
     "dicom-jpeg-jpegls?/encode",
     "dicom-jpeg-j2k?/encode",
     "dicom-jpeg-jxl?/encode",
+    "dicom-jpeg-dicom?/encode",
 ]
 # dicom-rs PixelDataReader / PixelDataWriter adapters
-dicom = ["dep:dicom-encoding", "dep:dicom-core", "dep:dicom-dictionary-std"]
+dicom = ["dep:dicom-jpeg-dicom"]
 # Data parallelism (tiles, code-blocks, frames)
 parallel = ["dep:rayon"]
 
@@ -67,15 +72,13 @@ dicom-jpeg-jpeg = { workspace = true, optional = true }
 dicom-jpeg-jpegls = { workspace = true, optional = true }
 dicom-jpeg-j2k = { workspace = true, optional = true }
 dicom-jpeg-jxl = { workspace = true, optional = true }
-dicom-core = { version = "0.10.1", optional = true }
-dicom-dictionary-std = { version = "0.10.1", optional = true }
-dicom-encoding = { version = "0.10.1", optional = true }
+dicom-jpeg-dicom = { workspace = true, optional = true }
 rayon = { version = "1.10", optional = true }
 
 [dev-dependencies]
-dicom-core = "0.10.1"
-dicom-dictionary-std = "0.10.1"
-dicom-encoding = "0.10.1"
+dicom-core.workspace = true
+dicom-dictionary-std.workspace = true
+dicom-encoding.workspace = true
 dicom-object = "0.10.1"
 jpeg-decoder = "0.3"
 jxl-oxide = { version = "0.12", default-features = false }

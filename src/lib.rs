@@ -32,7 +32,7 @@ pub use dicom_jpeg_jpegls as jpegls;
 pub use dicom_jpeg_jxl as jxl;
 
 #[cfg(feature = "dicom")]
-pub mod dicom_rs;
+pub use dicom_jpeg_dicom as dicom_rs;
 
 /// Whether support for `codec` is compiled in.
 #[allow(clippy::match_like_matches_macro)] // the arms depend on the enabled features

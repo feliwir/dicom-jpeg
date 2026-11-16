@@ -15,15 +15,15 @@ Each codec sits behind its own cargo feature.
 Other features:
 
 * `encode`: enables the encoders.
-* `dicom`: dicom-rs `PixelDataReader` / `PixelDataWriter` adapters (`dicom_jpeg::dicom_rs::PixelAdapter`).
+* `dicom`: dicom-rs `PixelDataReader` / `PixelDataWriter` adapters (`dicom_jpeg::dicom_rs::PixelAdapter`, crate `dicom-jpeg-dicom`).
 * `parallel`: rayon parallelism.
 
 ## Crates
 
 The repository is a cargo workspace. `dicom-jpeg` (the root package) is the
-facade: it re-exports the codec crates behind the features above, dispatches
-decoding by `Codec`, and contains the dicom-rs adapter, which maps transfer
-syntax UIDs (`dicom_dictionary_std::uids`) to a codec and its parameters.
+facade: it re-exports the crates below behind the features above (the
+adapter as `dicom_jpeg::dicom_rs`) and dispatches decoding by `Codec`. It
+also holds the integration tests, fuzz targets and test data.
 
 | Crate | Contents |
 |---|---|
@@ -32,6 +32,7 @@ syntax UIDs (`dicom_dictionary_std::uids`) to a codec and its parameters.
 | `crates/jpegls` (`dicom-jpeg-jpegls`) | ITU-T T.87 |
 | `crates/j2k` (`dicom-jpeg-j2k`) | JPEG 2000 with the `htj2k` and `part2` features |
 | `crates/jxl` (`dicom-jpeg-jxl`) | JPEG XL |
+| `crates/dicom` (`dicom-jpeg-dicom`) | dicom-rs `PixelDataReader` / `PixelDataWriter` adapter; maps transfer syntax UIDs (`dicom_dictionary_std::uids`) to a codec and its parameters |
 
 The codec crates know nothing about DICOM; each takes its own
 `EncoderOptions` and can be used on its own.

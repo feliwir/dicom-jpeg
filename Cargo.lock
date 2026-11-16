@@ -194,6 +194,7 @@ dependencies = [
  "dicom-dictionary-std",
  "dicom-encoding",
  "dicom-jpeg-common",
+ "dicom-jpeg-dicom",
  "dicom-jpeg-j2k",
  "dicom-jpeg-jpeg",
  "dicom-jpeg-jpegls",
@@ -208,6 +209,20 @@ dependencies = [
 [[package]]
 name = "dicom-jpeg-common"
 version = "0.1.0"
+
+[[package]]
+name = "dicom-jpeg-dicom"
+version = "0.1.0"
+dependencies = [
+ "dicom-core",
+ "dicom-dictionary-std",
+ "dicom-encoding",
+ "dicom-jpeg-common",
+ "dicom-jpeg-j2k",
+ "dicom-jpeg-jpeg",
+ "dicom-jpeg-jpegls",
+ "dicom-jpeg-jxl",
+]
 
 [[package]]
 name = "dicom-jpeg-j2k"

@@ -18,11 +18,48 @@
 //!   interleaved (planar configuration 0) and the codestream's own signedness
 //!   is used when decoding.
 
+#![forbid(unsafe_code)]
+
 use std::borrow::Cow;
 
 use dicom_encoding::adapters::{DecodeError, DecodeResult, PixelDataObject, PixelDataReader};
 
-use crate::{Codec, ColorOutput, ColorSpace, DecodeOptions, Image, Limits};
+use dicom_jpeg_common::{Codec, ColorOutput, ColorSpace, DecodeOptions, Image, Limits};
+// Re-imported at the crate root for the submodules.
+#[cfg(feature = "encode")]
+use dicom_jpeg_common::{AppliedTransform, EncodeOptions, Encoded};
+use dicom_jpeg_common::{Error, Result};
+use dicom_jpeg_common::{ImageInfo, Samples};
+
+#[cfg(feature = "jpeg2000")]
+use dicom_jpeg_j2k as j2k;
+#[cfg(feature = "jpeg")]
+use dicom_jpeg_jpeg as jpeg;
+#[cfg(feature = "jpeg-ls")]
+use dicom_jpeg_jpegls as jpegls;
+#[cfg(feature = "jpeg-xl")]
+use dicom_jpeg_jxl as jxl;
+
+/// Decode a codestream with the codec of a transfer syntax.
+fn decode(codec: Codec, data: &[u8], opts: &DecodeOptions) -> Result<Image> {
+    match codec {
+        #[cfg(feature = "jpeg")]
+        Codec::Jpeg => jpeg::decode(data, opts),
+        #[cfg(feature = "jpeg-ls")]
+        Codec::JpegLs => jpegls::decode(data, opts),
+        #[cfg(feature = "jpeg2000")]
+        Codec::Jpeg2000 => j2k::decode(data, opts),
+        #[cfg(feature = "htj2k")]
+        Codec::HtJ2k => j2k::decode(data, opts),
+        #[cfg(feature = "jpeg-xl")]
+        Codec::JpegXl => jxl::decode(data, opts),
+        #[allow(unreachable_patterns)]
+        codec => {
+            let _ = (data, opts);
+            Err(Error::CodecDisabled(codec))
+        }
+    }
+}
 
 mod syntax;
 #[cfg(feature = "encode")]
@@ -33,7 +70,7 @@ use syntax::{SYNTAXES, Syntax};
 /// dicom-rs pixel data adapter for one transfer syntax.
 ///
 /// ```no_run
-/// use dicom_jpeg::dicom_rs::PixelAdapter;
+/// use dicom_jpeg_dicom::PixelAdapter;
 /// use dicom_dictionary_std::uids;
 /// use dicom_encoding::adapters::PixelDataReader;
 /// # fn f(obj: &dyn dicom_encoding::adapters::PixelDataObject) {
