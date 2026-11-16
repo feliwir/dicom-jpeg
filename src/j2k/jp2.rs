@@ -22,7 +22,7 @@ pub(crate) fn codestream(data: &[u8]) -> Result<&[u8]> {
         if len < header {
             return Err(Error::invalid(CODEC, "invalid JP2 box length"));
         }
-        let end = (pos as u64 + len).min(data.len() as u64) as usize;
+        let end = (pos as u64).saturating_add(len).min(data.len() as u64) as usize;
         let start = pos + header as usize;
         if tbox == b"jp2c" {
             return Ok(&data[start.min(end)..end]);
@@ -30,4 +30,25 @@ pub(crate) fn codestream(data: &[u8]) -> Result<&[u8]> {
         pos = end;
     }
     Err(Error::invalid(CODEC, "JP2 file without codestream box"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Fuzzer find: an XLBox length near u64::MAX overflowed `pos + len`.
+    #[test]
+    fn huge_extended_box_length() {
+        let mut data = vec![0, 0, 0, 13];
+        data.extend_from_slice(b"jP  ");
+        data.extend_from_slice(&[3, 0, 0, 0, 0, 0, 0, 0, 1]);
+        data.extend_from_slice(b"\x01P\x00");
+        data.extend_from_slice(&[0xFF; 16]);
+        assert!(codestream(&data).is_err());
+        let mut xl = vec![0, 0, 0, 1];
+        xl.extend_from_slice(b"jp2c");
+        xl.extend_from_slice(&[0xFF; 8]);
+        xl.extend_from_slice(&[0xFF, 0x4F]);
+        assert_eq!(codestream(&xl).unwrap(), &[0xFF, 0x4F]);
+    }
 }

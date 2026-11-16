@@ -246,7 +246,7 @@ impl<'a> Rev<'a> {
         let tmp = d >> 4;
         let mut r = Rev {
             data,
-            pos: (lcup - 3).checked_sub(0).filter(|_| lcup >= 3),
+            pos: lcup.checked_sub(3),
             left: scup - 2,
             acc: tmp,
             bits: 4 - ((tmp & 7) == 7) as u32,
