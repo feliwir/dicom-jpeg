@@ -2,10 +2,13 @@
 //! one precinct per resolution. Lossless uses the 5/3 wavelet with RCT;
 //! lossy uses the 9/7 wavelet with ICT and per-band step sizes scaled by the
 //! synthesis gain of each sub-band, so quantization noise is spread evenly.
+//! With `high_throughput` every code-block is coded as a single HTJ2K
+//! cleanup pass (ISO/IEC 15444-15) instead of EBCOT.
 
 use super::CODEC;
 use super::codestream::{ComponentCoding, ComponentSiz, GlobalCoding, Quantization, TileParams};
 use super::dwt::{Analyse, Plane, analyse_level, synth_level};
+use super::ht::encode::encode as ht_encode;
 use super::t1::Orient;
 use super::t1_enc::{self, EncodedBlock};
 use super::tagtree::TagTreeEncoder;
@@ -27,6 +30,13 @@ pub struct EncoderOptions {
     pub progression: u8,
     /// Apply the inverse component transform signalling (RCT / ICT) to RGB input.
     pub color_transform: bool,
+    /// Use the HTJ2K block coder (ISO/IEC 15444-15) instead of EBCOT; writes
+    /// a CAP marker and code-block style 0x40.
+    pub high_throughput: bool,
+    /// Write a TLM marker. With a resolution-major progression (RLCP, RPCL)
+    /// every resolution level also gets its own tile-part, so a decoder can
+    /// stop after any resolution.
+    pub tlm: bool,
 }
 
 impl Default for EncoderOptions {
@@ -37,6 +47,8 @@ impl Default for EncoderOptions {
             levels: None,
             progression: 0,
             color_transform: true,
+            high_throughput: false,
+            tlm: false,
         }
     }
 }
@@ -474,7 +486,7 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
         levels: levels as u8,
         xcb: 6,
         ycb: 6,
-        cblk_style: 0,
+        cblk_style: if opts.high_throughput { 0x40 } else { 0 },
         reversible,
         precincts: vec![(15, 15); levels as usize + 1],
     };
@@ -506,7 +518,15 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
 
     // Tier 1 for every code-block, then tier 2 in packet order.
     let mut body = Vec::new();
+    // Byte offset in `body` where each resolution starts (for tile-parts).
+    let mut res_starts: Vec<usize> = Vec::new();
+    let resolution_major = matches!(opts.progression, 1 | 2);
+    let mut last_res = None;
     for id in order {
+        if last_res != Some(id.res) {
+            last_res = Some(id.res);
+            res_starts.push(body.len());
+        }
         let (c, r, p) = (id.comp as usize, id.res as usize, id.precinct as usize);
         let res = &comps[c].resolutions[r];
         let bands = &band_sets[c];
@@ -530,14 +550,32 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
                         coefs.push(bd.coefs[row + (x - bd.x0) as usize]);
                     }
                 }
-                let enc = t1_enc::encode(bw, bh, bd.orient, &coefs);
+                let enc = if opts.high_throughput {
+                    ht_encode(bw, bh, &coefs).ok_or_else(|| {
+                        Error::unsupported(CODEC, "code-block exceeds the HT segment limits")
+                    })?
+                } else {
+                    t1_enc::encode(bw, bh, bd.orient, &coefs)
+                };
                 if enc.bitplanes > mb {
                     return Err(Error::invalid(
                         CODEC,
                         "internal: code-block exceeds Mb bit-planes",
                     ));
                 }
-                zb.push(mb - enc.bitplanes);
+                if opts.high_throughput {
+                    // One cleanup pass at bit-plane 0: the signalled missing
+                    // MSBs are Mb - 1 (T.814 B.1).
+                    if mb > 30 {
+                        return Err(Error::unsupported(
+                            CODEC,
+                            "HT code-blocks with more than 30 magnitude bit-planes",
+                        ));
+                    }
+                    zb.push(mb - 1);
+                } else {
+                    zb.push(mb - enc.bitplanes);
+                }
                 blocks.push(enc);
             }
             coded.push((blocks, pb.cw, pb.ch, zb));
@@ -617,10 +655,33 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
         ]);
     }
     segment(&mut out, 0xFF51, &siz_seg);
+    if opts.high_throughput {
+        // CAP: Pcap bit 15 (Part 15), Ccap15 = HT only, single HT set,
+        // HTREV for the 5/3 wavelet and the MAGB bound.
+        let magb = quants
+            .iter()
+            .flat_map(|q| {
+                q.steps
+                    .iter()
+                    .map(|&(e, _)| q.guard_bits as u32 + e as u32 - 1)
+            })
+            .max()
+            .unwrap_or(0);
+        let bp = match magb {
+            0..=8 => 0,
+            9..=27 => magb - 8,
+            28..=47 => 13 + (magb >> 2),
+            _ => 31,
+        };
+        let ccap = (if reversible { 0x20u16 } else { 0 }) | bp as u16;
+        let mut cap = 0x0002_0000u32.to_be_bytes().to_vec();
+        cap.extend_from_slice(&ccap.to_be_bytes());
+        segment(&mut out, 0xFF50, &cap);
+    }
     let mut cod = vec![0u8, opts.progression];
     cod.extend_from_slice(&1u16.to_be_bytes());
     cod.push(mct as u8);
-    cod.extend_from_slice(&[levels as u8, 4, 4, 0, reversible as u8]);
+    cod.extend_from_slice(&[levels as u8, 4, 4, coding.cblk_style, reversible as u8]);
     segment(&mut out, 0xFF52, &cod);
     let quant_payload = |q: &Quantization| {
         let mut p = vec![(q.guard_bits << 5) | q.style];
@@ -645,11 +706,33 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
             segment(&mut out, 0xFF5D, &p);
         }
     }
-    let psot = (12 + 2 + body.len()) as u32;
-    out.extend_from_slice(&[0xFF, 0x90, 0, 10, 0, 0]);
-    out.extend_from_slice(&psot.to_be_bytes());
-    out.extend_from_slice(&[0, 1, 0xFF, 0x93]);
-    out.extend(body);
+    // Tile-parts: one per resolution for resolution-major orders with TLM.
+    let mut cuts = if opts.tlm && resolution_major {
+        res_starts
+    } else {
+        vec![0]
+    };
+    cuts.dedup();
+    if cuts.is_empty() || cuts.len() > 255 {
+        cuts = vec![0];
+    }
+    cuts.push(body.len());
+    let parts: Vec<&[u8]> = cuts.windows(2).map(|c| &body[c[0]..c[1]]).collect();
+    if opts.tlm {
+        // Ztlm 0, Stlm: no tile indices (ST = 0), 32-bit lengths (SP = 1).
+        let mut tlm = vec![0u8, 0x40];
+        for part in &parts {
+            tlm.extend_from_slice(&((14 + part.len()) as u32).to_be_bytes());
+        }
+        segment(&mut out, 0xFF55, &tlm);
+    }
+    for (i, part) in parts.iter().enumerate() {
+        let psot = (12 + 2 + part.len()) as u32;
+        out.extend_from_slice(&[0xFF, 0x90, 0, 10, 0, 0]);
+        out.extend_from_slice(&psot.to_be_bytes());
+        out.extend_from_slice(&[i as u8, parts.len() as u8, 0xFF, 0x93]);
+        out.extend_from_slice(part);
+    }
     out.extend_from_slice(&[0xFF, 0xD9]);
 
     let transform = match (mct, reversible) {

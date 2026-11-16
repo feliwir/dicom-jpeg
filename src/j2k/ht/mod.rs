@@ -8,6 +8,8 @@
 //! bit-plane. Internally samples use OpenJPH's 32-bit sign / magnitude layout;
 //! the result is converted to the doubled mid-point values of `t1::decode`.
 
+#[cfg(feature = "encode")]
+pub(crate) mod encode;
 pub(crate) mod tables;
 
 use super::CODEC;

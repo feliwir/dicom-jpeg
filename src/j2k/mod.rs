@@ -128,20 +128,24 @@ pub fn decode(data: &[u8], opts: &DecodeOptions) -> Result<Image> {
 ///
 /// `Jpeg2000Lossless` is always lossless. `Jpeg2000` is lossless when
 /// `opts.quality` is `None` or 100, otherwise irreversible (9/7) with that
-/// quality. Use [`encode_with`] for full control.
+/// quality. The HTJ2K syntaxes use the HT block coder with the same rules;
+/// `HtJ2kLosslessRpcl` additionally uses RPCL order, a TLM marker and one
+/// tile-part per resolution. Use [`encode_with`] for full control.
 #[cfg(feature = "encode")]
 pub fn encode(ts: TransferSyntax, image: &Image, opts: &EncodeOptions) -> Result<Encoded> {
-    let reversible = match ts {
-        TransferSyntax::Jpeg2000Lossless => true,
-        TransferSyntax::Jpeg2000 => matches!(opts.quality, None | Some(100..)),
+    let lossy_requested = !matches!(opts.quality, None | Some(100..));
+    let (reversible, high_throughput, rpcl) = match ts {
+        TransferSyntax::Jpeg2000Lossless => (true, false, false),
+        TransferSyntax::Jpeg2000 => (!lossy_requested, false, false),
         TransferSyntax::Jpeg2000Part2Lossless | TransferSyntax::Jpeg2000Part2 => {
             return Err(Error::unsupported(CODEC, "Part 2 multi-component encoding"));
         }
-        TransferSyntax::HtJ2kLossless
-        | TransferSyntax::HtJ2kLosslessRpcl
-        | TransferSyntax::HtJ2k => {
-            return Err(Error::unsupported(Codec::HtJ2k, "HTJ2K encoding"));
-        }
+        #[cfg(feature = "htj2k")]
+        TransferSyntax::HtJ2kLossless => (true, true, false),
+        #[cfg(feature = "htj2k")]
+        TransferSyntax::HtJ2kLosslessRpcl => (true, true, true),
+        #[cfg(feature = "htj2k")]
+        TransferSyntax::HtJ2k => (!lossy_requested, true, false),
         _ => {
             return Err(Error::input(format!(
                 "{ts} is not a JPEG 2000 transfer syntax"
@@ -151,6 +155,9 @@ pub fn encode(ts: TransferSyntax, image: &Image, opts: &EncodeOptions) -> Result
     let params = EncoderOptions {
         reversible,
         quality: opts.quality.unwrap_or(90),
+        high_throughput,
+        progression: if rpcl { 2 } else { 0 },
+        tlm: rpcl,
         ..EncoderOptions::default()
     };
     encode_with(image, &params)
