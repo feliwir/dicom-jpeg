@@ -252,6 +252,7 @@ mod tests {
                     passes: enc.passes,
                     max_passes: u32::MAX,
                     data: enc.data.clone(),
+                    cup_pass: None,
                 };
                 t1::decode(w, h, orient, 0, enc.bitplanes, &[seg], &mut out).unwrap();
                 // Decoder returns doubled mid-point values; >> 1 gives the integer.

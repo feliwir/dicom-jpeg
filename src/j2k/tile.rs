@@ -2,7 +2,7 @@
 
 use super::CODEC;
 use super::codestream::{ComponentCoding, ComponentSiz, Poc, TileParams};
-use super::t1::{Orient, STYLE_BYPASS, STYLE_TERMALL, Segment};
+use super::t1::{Orient, STYLE_BYPASS, STYLE_HT, STYLE_HT_MIXED, STYLE_TERMALL, Segment};
 use super::tagtree::TagTree;
 use crate::error::{Error, Result};
 
@@ -21,6 +21,20 @@ pub(crate) struct CodeBlock {
     pub(crate) zero_bitplanes: u32,
     pub(crate) lblock: u32,
     pub(crate) segments: Vec<Segment>,
+    /// HT only: parsing state (see `HtState`).
+    pub(crate) ht_state: HtState,
+}
+
+/// Packet-header state of an HT code-block (T.814 Annex B).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum HtState {
+    /// No HT cleanup pass seen yet: all passes so far are placeholders.
+    #[default]
+    Placeholders,
+    /// The first HT cleanup pass has been received.
+    Coded,
+    /// Mixed mode: this code-block uses the Part 1 block coder.
+    Part1,
 }
 
 #[derive(Debug)]
@@ -197,6 +211,7 @@ impl TileComponent {
                                         zero_bitplanes: 0,
                                         lblock: 3,
                                         segments: Vec::new(),
+                                        ht_state: HtState::Placeholders,
                                     });
                                 }
                             }
@@ -624,45 +639,147 @@ pub(crate) fn decode_packet(
                     if cb.lblock > 32 {
                         return Err(Error::invalid(CODEC, "Lblock too large"));
                     }
-                    // Split the new passes into segments and read their lengths.
-                    let mut remaining = passes;
                     let mut parts = Vec::new();
-                    let mut seg_index = cb.segments.len();
-                    let mut cur_passes = 0;
-                    let mut cur_max = 0;
-                    if let Some(last) = cb.segments.last() {
-                        if last.passes < last.max_passes {
-                            seg_index -= 1;
-                            cur_passes = last.passes;
-                            cur_max = last.max_passes;
+                    if style & STYLE_HT != 0 && cb.ht_state != HtState::Part1 {
+                        let mixed = style & STYLE_HT_MIXED == STYLE_HT_MIXED;
+                        let mut remaining = passes;
+                        if cb.ht_state == HtState::Placeholders {
+                            // All passes so far sit in one open segment. A cleanup
+                            // pass can only be at a global index divisible by 3.
+                            if cb.segments.is_empty() {
+                                cb.segments.push(Segment::default());
+                            }
+                            let index: u32 = cb.segments[0].passes;
+                            let refinement = (index + passes - 1) % 3;
+                            let to_cleanup = passes as i64 - refinement as i64;
+                            let (n, len, cleanup) = if to_cleanup < 1 {
+                                let Some(len) = headers.bits(cb.lblock + floor_log2(passes)) else {
+                                    return Ok(false);
+                                };
+                                (passes, len, false)
+                            } else {
+                                let n = to_cleanup as u32;
+                                let bits = cb.lblock + floor_log2(n);
+                                let Some(mut len) = headers.bits(bits) else {
+                                    return Ok(false);
+                                };
+                                let msb_clear = len >> (bits - 1) == 0;
+                                let found =
+                                    len != 0 && (!mixed || (cb.lblock > 3 && len > 1 && msb_clear));
+                                if found {
+                                    if len < 2 {
+                                        return Err(Error::invalid(
+                                            CODEC,
+                                            "HT cleanup segment shorter than 2 bytes",
+                                        ));
+                                    }
+                                    (n, len, true)
+                                } else {
+                                    // The length field spans every pass of this contribution.
+                                    let extra = floor_log2(passes) - floor_log2(n);
+                                    let Some(more) = headers.bits(extra) else {
+                                        return Ok(false);
+                                    };
+                                    len = (len << extra) | more;
+                                    (passes, len, false)
+                                }
+                            };
+                            if !cleanup && len != 0 {
+                                if !mixed {
+                                    return Err(Error::invalid(
+                                        CODEC,
+                                        "HT placeholder passes carry data",
+                                    ));
+                                }
+                                // Mixed mode: a Part 1 code-block.
+                                cb.ht_state = HtState::Part1;
+                                cb.segments[0].max_passes = 109;
+                            }
+                            parts.push((0, n, len));
+                            remaining -= n;
+                            if cleanup {
+                                cb.ht_state = HtState::Coded;
+                                cb.segments[0].cup_pass = Some(index + n - 1);
+                            }
                         }
-                    }
-                    let mut virtual_segments: Vec<Segment> = Vec::new();
-                    while remaining > 0 {
-                        if seg_index == cb.segments.len() + virtual_segments.len() {
-                            let mut all: Vec<Segment> = cb.segments.clone();
-                            all.extend(virtual_segments.iter().cloned());
-                            let m = max_passes(style, &all);
-                            virtual_segments.push(Segment {
-                                passes: 0,
-                                max_passes: m,
-                                data: Vec::new(),
-                            });
+                        if cb.ht_state == HtState::Coded {
+                            let mut total: u32 = cb.segments.iter().map(|s| s.passes).sum::<u32>()
+                                + parts.iter().map(|&(_, n, _)| n).sum::<u32>();
+                            while remaining > 0 {
+                                let phase = total % 3;
+                                let (seg, n) = if phase == 0 {
+                                    cb.segments.push(Segment {
+                                        cup_pass: Some(total),
+                                        ..Segment::default()
+                                    });
+                                    (cb.segments.len() - 1, 1)
+                                } else {
+                                    let open = cb.segments.last().is_some_and(|s| {
+                                        s.cup_pass.is_none() && s.max_passes == 2 && phase == 2
+                                    });
+                                    if !open {
+                                        cb.segments.push(Segment {
+                                            max_passes: 2,
+                                            ..Segment::default()
+                                        });
+                                    }
+                                    (cb.segments.len() - 1, remaining.min(3 - phase))
+                                };
+                                let Some(len) = headers.bits(cb.lblock + floor_log2(n)) else {
+                                    return Ok(false);
+                                };
+                                if phase == 0 && len == 1 {
+                                    return Err(Error::invalid(
+                                        CODEC,
+                                        "HT cleanup segment of 1 byte",
+                                    ));
+                                }
+                                parts.push((seg as u32, n, len));
+                                total += n;
+                                remaining -= n;
+                            }
+                        }
+                    } else {
+                        // Split the new passes into segments and read their lengths.
+                        let mut remaining = passes;
+                        let mut seg_index = cb.segments.len();
+                        let mut cur_passes = 0;
+                        let mut cur_max = 0;
+                        if let Some(last) = cb.segments.last() {
+                            if last.passes < last.max_passes {
+                                seg_index -= 1;
+                                cur_passes = last.passes;
+                                cur_max = last.max_passes;
+                            }
+                        }
+                        let mut virtual_segments: Vec<Segment> = Vec::new();
+                        while remaining > 0 {
+                            if seg_index == cb.segments.len() + virtual_segments.len() {
+                                let mut all: Vec<Segment> = cb.segments.clone();
+                                all.extend(virtual_segments.iter().cloned());
+                                let m = max_passes(style, &all);
+                                virtual_segments.push(Segment {
+                                    passes: 0,
+                                    max_passes: m,
+                                    data: Vec::new(),
+                                    cup_pass: None,
+                                });
+                                cur_passes = 0;
+                                cur_max = m;
+                            }
+                            let n = remaining.min(cur_max - cur_passes);
+                            let bits = cb.lblock + floor_log2(n);
+                            let Some(len) = headers.bits(bits) else {
+                                return Ok(false);
+                            };
+                            parts.push((seg_index as u32, n, len));
+                            remaining -= n;
+                            seg_index += 1;
                             cur_passes = 0;
-                            cur_max = m;
+                            cur_max = 0;
                         }
-                        let n = remaining.min(cur_max - cur_passes);
-                        let bits = cb.lblock + floor_log2(n);
-                        let Some(len) = headers.bits(bits) else {
-                            return Ok(false);
-                        };
-                        parts.push((seg_index as u32, n, len));
-                        remaining -= n;
-                        seg_index += 1;
-                        cur_passes = 0;
-                        cur_max = 0;
+                        cb.segments.extend(virtual_segments);
                     }
-                    cb.segments.extend(virtual_segments);
                     contributions.push((
                         bi,
                         k,

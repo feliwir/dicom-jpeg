@@ -9,7 +9,7 @@ Each codec sits behind its own cargo feature.
 | .80 .81 | JPEG-LS (T.87) | `jpeg-ls` | decoder ✔ encoder ✔ |
 | .90 .91 | JPEG 2000 (15444-1) | `jpeg2000` | decoder ✔ encoder ✔ |
 | .92 .93 | JPEG 2000 Part 2 multi-component | `jpeg2000-part2` | planned (phase 7) |
-| .201 .202 .203 | HTJ2K (15444-15) | `htj2k` | planned (phase 6) |
+| .201 .202 .203 | HTJ2K (15444-15) | `htj2k` | decoder ✔, encoder planned (phase 6) |
 | .110 .111 .112 | JPEG XL (18181) | `jpeg-xl` | planned (phase 8–9) |
 
 Other features:

@@ -25,6 +25,8 @@ pub(crate) const STYLE_TERMALL: u8 = 0x04;
 pub(crate) const STYLE_VSC: u8 = 0x08;
 pub(crate) const STYLE_SEGSYM: u8 = 0x20;
 pub(crate) const STYLE_HT: u8 = 0x40;
+/// HT mixed mode: code-blocks may be HT or Part 1 (bits 6 and 7 set).
+pub(crate) const STYLE_HT_MIXED: u8 = 0xC0;
 
 const SIG: u8 = 1;
 const NEG: u8 = 2;
@@ -305,6 +307,9 @@ pub(crate) struct Segment {
     pub(crate) passes: u32,
     pub(crate) max_passes: u32,
     pub(crate) data: Vec<u8>,
+    /// HT only: index of the cleanup pass of this (cleanup) segment, counting
+    /// placeholder passes; `None` for refinement segments.
+    pub(crate) cup_pass: Option<u32>,
 }
 
 /// Decode one code-block into `out` (`w * h`, row-major, doubled signed values).

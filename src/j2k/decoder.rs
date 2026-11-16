@@ -4,8 +4,9 @@
 use super::CODEC;
 use super::codestream::{Codestream, Quantization, TileParams};
 use super::dwt::{Plane, synth_level};
+use super::ht;
 use super::t1::{self, Orient};
-use super::tile::{HeaderReader, TileComponent, ceil_div, decode_packet, packet_order};
+use super::tile::{HeaderReader, HtState, TileComponent, ceil_div, decode_packet, packet_order};
 use crate::Limits;
 use crate::error::{Error, Result};
 
@@ -176,15 +177,43 @@ fn decode_tile(
                         let (w, h) = ((cb.x1 - cb.x0) as usize, (cb.y1 - cb.y0) as usize);
                         buf.resize(w * h, 0);
                         let bitplanes = (mb + roi).saturating_sub(cb.zero_bitplanes);
-                        t1::decode(
-                            w,
-                            h,
-                            band.orient,
-                            tc.coding.cblk_style,
-                            bitplanes,
-                            &cb.segments,
-                            &mut buf,
-                        )?;
+                        if tc.coding.cblk_style & t1::STYLE_HT != 0 && cb.ht_state != HtState::Part1
+                        {
+                            // Decode the most recent HT set with a usable cleanup segment.
+                            let Some(ci) = cb.segments.iter().rposition(|s| {
+                                s.cup_pass.is_some() && s.passes > 0 && s.data.len() >= 2
+                            }) else {
+                                continue;
+                            };
+                            let cup = &cb.segments[ci];
+                            let set_offset = cup.cup_pass.unwrap_or(0) / 3;
+                            let refinement =
+                                cb.segments.get(ci + 1).filter(|s| s.cup_pass.is_none());
+                            let passes = 1 + refinement.map_or(0, |s| s.passes);
+                            let empty: &[u8] = &[];
+                            let missing = cb.zero_bitplanes + set_offset;
+                            ht::decode(
+                                w,
+                                h,
+                                &cup.data,
+                                refinement.map_or(empty, |s| &s.data),
+                                passes,
+                                missing,
+                                bitplanes.saturating_sub(set_offset),
+                                tc.coding.cblk_style & t1::STYLE_VSC != 0,
+                                &mut buf,
+                            )?;
+                        } else {
+                            t1::decode(
+                                w,
+                                h,
+                                band.orient,
+                                tc.coding.cblk_style & !t1::STYLE_HT_MIXED,
+                                bitplanes,
+                                &cb.segments,
+                                &mut buf,
+                            )?;
+                        }
                         for y in 0..h {
                             for x in 0..w {
                                 let mut v = buf[y * w + x];

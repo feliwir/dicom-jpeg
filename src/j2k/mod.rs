@@ -11,6 +11,7 @@ mod decoder;
 mod dwt;
 #[cfg(feature = "encode")]
 mod encoder;
+mod ht;
 mod jp2;
 mod mq;
 mod t1;
