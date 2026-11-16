@@ -325,7 +325,14 @@ impl FrameHeader {
         if fh.width == 0 || fh.height == 0 {
             return Err(invalid("empty frame"));
         }
-
+        if fh.width > 1 << 30 || fh.height > 1 << 30 {
+            return Err(invalid("frame dimensions too large"));
+        }
+        // Group counts must fit the TOC (and u32 arithmetic).
+        let (gx, gy) = fh.groups();
+        if gx as u64 * gy as u64 * fh.passes.num_passes as u64 > 1 << 22 {
+            return Err(invalid("too many groups"));
+        }
         Ok(fh)
     }
 

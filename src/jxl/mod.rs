@@ -674,3 +674,17 @@ pub fn encode(ts: TransferSyntax, image: &Image, opts: &EncodeOptions) -> Result
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Fuzzer input (CI): a cropped frame whose group count overflowed u32.
+    #[test]
+    fn huge_cropped_frame_is_rejected() {
+        let data = [
+            255, 10, 255, 32, 32, 32, 32, 0, 4, 255, 84, 10, 4, 255, 0, 10, 3, 58, 0, 1, 0, 0, 3, 85, 105, 32,
+            32, 160, 255, 0, 49, 255,
+        ];
+        assert!(decode(&data, &DecodeOptions::default()).is_err());
+    }
+}
