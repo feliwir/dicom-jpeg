@@ -42,6 +42,7 @@ dicom-dictionary-std = "0.10.1"
 dicom-encoding = "0.10.1"
 dicom-object = "0.10.1"
 jpeg-decoder = "0.3"
+png = "0.18"
 
 [[test]]
 name = "dicom_decode"
@@ -96,3 +97,7 @@ required-features = ["jpeg2000", "dicom"]
 [[test]]
 name = "j2k_encoder"
 required-features = ["jpeg2000", "encode"]
+
+[[test]]
+name = "jxl_conformance"
+required-features = ["jpeg-xl"]
