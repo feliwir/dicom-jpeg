@@ -539,3 +539,75 @@ fn htj2k_bsets() {
     assert!(count >= 40, "only {count} HT codestreams found");
     assert!(failures.is_empty(), "failures:\n{}", failures.join("\n"));
 }
+
+/// Part 2 multiple component transform codestreams (15444-4 "extended"):
+/// mct1 (9/7 wavelet along 60 components), mct2 (wavelet stage on three
+/// collections followed by 60 array decorrelation collections) and mct3o
+/// (2 -> 3 components irreversible decorrelation with offsets). The
+/// reference images carry no tolerances. They were produced by truncating
+/// the reconstructed values while we round, so about half the samples
+/// differ by exactly 1: allow a peak error of 1 and an MSE of 0.5.
+#[test]
+#[cfg(feature = "jpeg2000-part2")]
+fn part2_multiple_component_transforms() {
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("testdata")
+        .join(ROOT);
+    for (name, ncomp) in [("mct1", 60usize), ("mct2", 180), ("mct3o", 3)] {
+        let data = std::fs::read(
+            base.join("codestreams_extended")
+                .join(format!("{name}.j2k")),
+        )
+        .unwrap();
+        let comps = decode_components(&data, &DecoderOptions::default())
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(comps.len(), ncomp, "{name}");
+        // The electronic insert does not number the reference files in
+        // component order. The components form 60 equal units (single
+        // components in mct1, the colour triples of mct2) and the units are
+        // numbered in a punctuation-ignoring name sort ("0", "10".."19",
+        // "1", "20", ...). Established by matching every decoded component
+        // against all reference files.
+        let files: Vec<usize> = if ncomp % 60 == 0 {
+            let unit = ncomp / 60;
+            let mut units: Vec<usize> = (0..60).collect();
+            units.sort_by_key(|k| format!("{k}pgx"));
+            (0..ncomp)
+                .map(|i| units[i / unit] * unit + i % unit)
+                .collect()
+        } else {
+            (0..ncomp).collect()
+        };
+        let (mut worst_peak, mut worst_mse) = (0i64, 0f64);
+        for (i, c) in comps.iter().enumerate() {
+            let pgx = std::fs::read(
+                base.join("reference_extended")
+                    .join(format!("{name}-{}.pgx", files[i])),
+            )
+            .unwrap();
+            let (w, h, reference) = read_pgx(&pgx);
+            assert_eq!((c.width, c.height), (w, h), "{name} component {i}");
+            let peak = c
+                .data
+                .iter()
+                .zip(&reference)
+                .map(|(a, b)| (*a as i64 - *b as i64).abs())
+                .max()
+                .unwrap_or(0);
+            let mse = c
+                .data
+                .iter()
+                .zip(&reference)
+                .map(|(a, b)| ((*a - *b) as f64).powi(2))
+                .sum::<f64>()
+                / reference.len() as f64;
+            worst_peak = worst_peak.max(peak);
+            worst_mse = worst_mse.max(mse);
+        }
+        eprintln!("{name}: worst peak {worst_peak}, worst MSE {worst_mse:.4}");
+        assert!(
+            worst_peak <= 1 && worst_mse <= 0.5,
+            "{name}: peak {worst_peak}, MSE {worst_mse}"
+        );
+    }
+}

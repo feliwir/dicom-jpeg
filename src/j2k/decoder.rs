@@ -258,6 +258,80 @@ fn decode_tile(
         }
     }
 
+    // Part 2 multiple component transforms (T.801 Annex J) replace the
+    // Part 1 component transform and DC level shift.
+    if let Some(pipe) = super::mct::pipeline(cs, t)? {
+        if !cfg!(feature = "jpeg2000-part2") {
+            return Err(Error::unsupported(
+                CODEC,
+                "Part 2 multiple component transforms (enable the jpeg2000-part2 feature)",
+            ));
+        }
+        let spatial: Vec<Plane<f64>> = coeffs
+            .into_iter()
+            .map(|co| match co {
+                Coefficients::Int(mut p) => {
+                    let p = p.remove(0);
+                    Plane {
+                        x0: p.x0,
+                        y0: p.y0,
+                        w: p.w,
+                        h: p.h,
+                        data: p.data.iter().map(|&v| v as f64).collect(),
+                    }
+                }
+                Coefficients::Float(mut p) => {
+                    let p = p.remove(0);
+                    Plane {
+                        x0: p.x0,
+                        y0: p.y0,
+                        w: p.w,
+                        h: p.h,
+                        data: p.data.iter().map(|&v| v as f64).collect(),
+                    }
+                }
+            })
+            .collect();
+        let outputs = pipe.inverse(spatial)?;
+        let out_comps = cs.output_comps();
+        let template = outputs
+            .iter()
+            .flatten()
+            .next()
+            .map(|p| (p.x0, p.y0, p.w, p.h))
+            .ok_or_else(|| Error::invalid(CODEC, "multiple component transform without output"))?;
+        for (i, oc) in out_comps.iter().enumerate() {
+            let prec = oc.precision as u32;
+            let (lo, hi) = if oc.signed {
+                (-(1i64 << (prec - 1)), (1i64 << (prec - 1)) - 1)
+            } else {
+                (0, (1i64 << prec) - 1)
+            };
+            let plane = match outputs.get(i).and_then(|p| p.as_ref()) {
+                Some(p) => Plane {
+                    x0: p.x0,
+                    y0: p.y0,
+                    w: p.w,
+                    h: p.h,
+                    data: p
+                        .data
+                        .iter()
+                        .map(|&v| (v.round() as i64).clamp(lo, hi) as i32)
+                        .collect(),
+                },
+                None => Plane {
+                    x0: template.0,
+                    y0: template.1,
+                    w: template.2,
+                    h: template.3,
+                    data: vec![0i64.clamp(lo, hi) as i32; template.2 * template.3],
+                },
+            };
+            out_planes.push(plane);
+        }
+        return Ok((out_planes, params));
+    }
+
     // Inverse component transform (G.2 / G.3).
     let same_size = |a: usize, b: usize| {
         let pa = match &coeffs[a] {
@@ -350,9 +424,10 @@ pub(crate) fn decode_codestream(cs: &Codestream, opts: &DecoderOptions) -> Resul
         // HT code-blocks are detected per block; the rest of the pipeline is shared.
     }
     let r = opts.reduce as u32;
-    let mut comps: Vec<Component> = Vec::with_capacity(siz.comps.len());
-    let mut origins = Vec::with_capacity(siz.comps.len());
-    for s in &siz.comps {
+    let out_comps = cs.output_comps();
+    let mut comps: Vec<Component> = Vec::with_capacity(out_comps.len());
+    let mut origins = Vec::with_capacity(out_comps.len());
+    for s in &out_comps {
         let fx = (s.dx as u64) << r;
         let fy = (s.dy as u64) << r;
         let x0 = ceil_div(siz.x0 as u64, fx);
@@ -386,7 +461,7 @@ pub(crate) fn decode_codestream(cs: &Codestream, opts: &DecoderOptions) -> Resul
         }
         any = true;
         let (planes, _) = decode_tile(cs, t, opts)?;
-        for (c, p) in planes.into_iter().enumerate() {
+        for (c, p) in planes.into_iter().enumerate().take(comps.len()) {
             let comp = &mut comps[c];
             let (ox, oy) = origins[c];
             for y in 0..p.h {

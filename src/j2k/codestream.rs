@@ -103,6 +103,12 @@ pub(crate) struct HeaderParams {
     pub(crate) qcc: Vec<Option<Quantization>>,
     pub(crate) rgn: Vec<Option<u8>>,
     pub(crate) poc: Vec<Poc>,
+    /// Part 2 MCT segments: (Imct, Zmct, array data).
+    pub(crate) mct: Vec<(u16, u16, Vec<u8>)>,
+    /// Part 2 MCC segments: (Imcc, Zmcc, Qmcc if Zmcc = 0, collection data).
+    pub(crate) mcc: Vec<(u8, u16, Option<u16>, Vec<u8>)>,
+    /// Part 2 MCO: MCC indices of the inverse transform stages.
+    pub(crate) mco: Option<Vec<u8>>,
 }
 
 impl HeaderParams {
@@ -134,6 +140,8 @@ pub(crate) struct Codestream {
     pub(crate) tiles: Vec<TileData>,
     /// HTJ2K (Part 15) capabilities present.
     pub(crate) high_throughput: bool,
+    /// Part 2 CBD: (precision, signed) of every reconstructed image component.
+    pub(crate) cbd: Option<Vec<(u8, bool)>>,
 }
 
 /// Resolved parameters for one tile.
@@ -147,6 +155,28 @@ pub(crate) struct TileParams {
 }
 
 impl Codestream {
+    /// Precision, signedness and sub-sampling of the output components:
+    /// the CBD marker when Part 2 multiple component transforms are used,
+    /// SIZ otherwise.
+    pub(crate) fn output_comps(&self) -> Vec<ComponentSiz> {
+        match &self.cbd {
+            Some(cbd) => cbd
+                .iter()
+                .enumerate()
+                .map(|(i, &(precision, signed))| {
+                    let s = self.siz.comps[i.min(self.siz.comps.len() - 1)];
+                    ComponentSiz {
+                        precision,
+                        signed,
+                        dx: s.dx,
+                        dy: s.dy,
+                    }
+                })
+                .collect(),
+            None => self.siz.comps.clone(),
+        }
+    }
+
     /// Resolve COD/COC/QCD/QCC/RGN/POC priorities for a tile (A.6).
     pub(crate) fn tile_params(&self, t: usize) -> Result<TileParams> {
         let nc = self.siz.comps.len();
@@ -424,9 +454,57 @@ fn parse_param_marker(m: u16, seg: &[u8], nc: usize, p: &mut HeaderParams) -> Re
                 });
             }
         }
+        0xFF74 => {
+            let z = r.u16()?;
+            let imct = r.u16()?;
+            if z == 0 {
+                let _ymct = r.u16()?;
+            }
+            p.mct.push((imct, z, seg[r.p..].to_vec()));
+        }
+        0xFF75 => {
+            let z = r.u16()?;
+            let imcc = r.u8()?;
+            let q = if z == 0 {
+                let _ymcc = r.u16()?;
+                Some(r.u16()?)
+            } else {
+                None
+            };
+            p.mcc.push((imcc, z, q, seg[r.p..].to_vec()));
+        }
+        0xFF77 => {
+            let n = r.u8()? as usize;
+            p.mco = Some(r.bytes(n)?.to_vec());
+        }
         _ => return Ok(false),
     }
     Ok(true)
+}
+
+fn parse_cbd(seg: &[u8]) -> Result<Vec<(u8, bool)>> {
+    let mut r = Reader { d: seg, p: 0 };
+    let n = r.u16()?;
+    let count = (n & 0x7FFF) as usize;
+    if count == 0 || count > 16384 {
+        return Err(invalid("invalid CBD component count"));
+    }
+    let depth = |b: u8| -> Result<(u8, bool)> {
+        let precision = (b & 0x7F) + 1;
+        if precision > 31 {
+            return Err(Error::unsupported(
+                CODEC,
+                "component precision above 31 bits",
+            ));
+        }
+        Ok((precision, b & 0x80 != 0))
+    };
+    if n & 0x8000 != 0 {
+        let d = depth(r.u8()?)?;
+        Ok(vec![d; count])
+    } else {
+        (0..count).map(|_| depth(r.u8()?)).collect()
+    }
 }
 
 /// Parse a raw J2K codestream.
@@ -439,6 +517,7 @@ pub(crate) fn parse(data: &[u8]) -> Result<Codestream> {
     let mut main = HeaderParams::default();
     let mut ppm: Vec<(u8, Vec<u8>)> = Vec::new();
     let mut high_throughput = false;
+    let mut cbd = None;
 
     // Main header.
     loop {
@@ -468,6 +547,7 @@ pub(crate) fn parse(data: &[u8]) -> Result<Codestream> {
                 siz = Some(s);
             }
             0xFF50 => high_throughput = true,
+            0xFF78 => cbd = Some(parse_cbd(seg)?),
             0xFF60 => {
                 if let Some((&z, rest)) = seg.split_first() {
                     ppm.push((z, rest.to_vec()));
@@ -596,5 +676,6 @@ pub(crate) fn parse(data: &[u8]) -> Result<Codestream> {
         main,
         tiles,
         high_throughput,
+        cbd,
     })
 }

@@ -13,6 +13,7 @@ mod dwt;
 mod encoder;
 mod ht;
 mod jp2;
+mod mct;
 mod mq;
 mod t1;
 #[cfg(feature = "encode")]
@@ -55,14 +56,15 @@ pub fn decode_components(data: &[u8], opts: &DecoderOptions) -> Result<Vec<Compo
 pub fn read_info(data: &[u8]) -> Result<ImageInfo> {
     let cs = codestream::parse(codestream(data)?)?;
     let s = &cs.siz;
-    let c0 = s.comps[0];
+    let out = cs.output_comps();
+    let c0 = out[0];
     Ok(ImageInfo {
         width: (s.x1 - s.x0).div_ceil(c0.dx),
         height: (s.y1 - s.y0).div_ceil(c0.dy),
-        components: s.comps.len() as u16,
-        bits_per_sample: s.comps.iter().map(|c| c.precision).max().unwrap_or(8),
+        components: out.len() as u16,
+        bits_per_sample: out.iter().map(|c| c.precision).max().unwrap_or(8),
         signed: c0.signed,
-        color_space: match s.comps.len() {
+        color_space: match out.len() {
             1 => ColorSpace::Gray,
             3 => ColorSpace::Rgb,
             _ => ColorSpace::Unknown,
