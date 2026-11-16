@@ -74,10 +74,16 @@ cases!(ready, "jpeg2000", {
     j2k_q100_is_lossless: "dicom/wg04/REF/MR2_UNC" => Jpeg2000, Some(100), Exact;
 });
 
-cases!(pending, "jpeg2000-part2", {
+// Part 2 codes all frames as the components of one codestream.
+cases!(ready, "jpeg2000-part2", {
     j2k_part2_lossless_us1: "dicom/wg04/REF/US1_UNC" => Jpeg2000Part2Lossless, None, Exact;
     j2k_part2_lossless_ct1: "dicom/wg04/REF/CT1_UNC" => Jpeg2000Part2Lossless, None, Exact;
+    j2k_part2_lossless_emri: "dicom/pydicom/emri_small.dcm" => Jpeg2000Part2Lossless, None, Exact;
+    j2k_part2_lossless_small_odd: "dicom/pydicom/SC_rgb_small_odd.dcm" => Jpeg2000Part2Lossless, None, Exact;
     j2k_part2_lossy_us1: "dicom/wg04/REF/US1_UNC" => Jpeg2000Part2, Some(90), Psnr(35.0);
+    j2k_part2_lossy_ct1: "dicom/wg04/REF/CT1_UNC" => Jpeg2000Part2, Some(90), Psnr(45.0);
+    j2k_part2_lossy_emri: "dicom/pydicom/emri_small.dcm" => Jpeg2000Part2, Some(90), Psnr(40.0);
+    j2k_part2_q100_is_lossless: "dicom/pydicom/emri_small.dcm" => Jpeg2000Part2, Some(100), Exact;
 });
 
 // ---- HTJ2K (15444-15) ----------------------------------------------------------------
