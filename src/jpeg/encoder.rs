@@ -301,7 +301,7 @@ fn encode_dct(ts: TransferSyntax, image: &Image, opts: &EncoderOptions) -> Resul
         let mut rst = 0u8;
         for my in 0..mcus_y {
             for mx in 0..mcus_x {
-                let marker = if restart > 0 && n > 0 && n % restart == 0 {
+                let marker = if restart > 0 && n > 0 && n.is_multiple_of(restart) {
                     let r = rst;
                     rst = (rst + 1) & 7;
                     Some(r)

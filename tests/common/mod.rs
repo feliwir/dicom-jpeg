@@ -146,7 +146,9 @@ pub fn samples(bytes: &[u8], bits_allocated: u32, bits: u32, signed: bool) -> Ve
     match bits_allocated {
         8 => bytes.iter().map(|&b| conv(b as u32)).collect(),
         16 => bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| conv(u16::from_le_bytes([c[0], c[1]]) as u32))
             .collect(),
         other => panic!("unsupported Bits Allocated {other}"),
@@ -477,9 +479,11 @@ pub fn md5_hex(data: &[u8]) -> String {
     msg.extend_from_slice(&bit_len.to_le_bytes());
     let (mut a0, mut b0, mut c0, mut d0) =
         (0x67452301u32, 0xefcdab89u32, 0x98badcfeu32, 0x10325476u32);
-    for chunk in msg.chunks_exact(64) {
+    for chunk in msg.as_chunks::<64>().0 {
         let m: Vec<u32> = chunk
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
             .collect();
         let (mut a, mut b, mut c, mut d) = (a0, b0, c0, d0);

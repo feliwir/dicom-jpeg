@@ -203,13 +203,12 @@ impl PixelDataReader for PixelAdapter {
         let mut image: Image = crate::decode(self.ts, &data, &opts).map_err(codec_decode_error)?;
         // Lossy codestreams may carry more bits than the object stores (e.g. 10-bit
         // data in a 12-bit JPEG); clamp overshoot so it cannot wrap when masked.
-        if let Some(bits_stored) = src.bits_stored() {
-            if !image.info.signed
-                && (bits_stored as u8) < image.info.bits_per_sample
-                && bits_stored > 0
-            {
-                clamp_unsigned(&mut image, bits_stored as u8);
-            }
+        if let Some(bits_stored) = src.bits_stored()
+            && !image.info.signed
+            && (bits_stored as u8) < image.info.bits_per_sample
+            && bits_stored > 0
+        {
+            clamp_unsigned(&mut image, bits_stored as u8);
         }
 
         let info = &image.info;

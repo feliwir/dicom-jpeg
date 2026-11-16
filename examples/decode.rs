@@ -96,7 +96,9 @@ fn decode_dicom(input: &Path, out_dir: &Path, stem: &str, raw: bool) -> BoxResul
         let samples: Vec<i32> = match bits_allocated {
             8 => bytes.iter().map(|&b| b as u32).collect::<Vec<_>>(),
             _ => bytes
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|c| u16::from_le_bytes([c[0], c[1]]) as u32)
                 .collect(),
         }

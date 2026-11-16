@@ -75,7 +75,9 @@ fn to_values(bytes: &[u8], a: &Attrs) -> Vec<i32> {
         bytes.iter().map(|&b| conv(b as u32)).collect()
     } else {
         bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| conv(u16::from_le_bytes([c[0], c[1]]) as u32))
             .collect()
     }
@@ -109,7 +111,9 @@ fn read_pam(data: &[u8]) -> Result<(usize, Vec<u32>), String> {
     }
     let px = &data[end + 7..];
     let values = if maxval > 255 {
-        px.chunks_exact(2)
+        px.as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| u16::from_be_bytes([c[0], c[1]]) as u32)
             .collect()
     } else {

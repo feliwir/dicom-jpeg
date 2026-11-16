@@ -389,10 +389,12 @@ pub(crate) fn packet_order(
                     }
                     let rpx = res.ppx as u32 + lv;
                     let rpy = res.ppy as u32 + lv;
-                    let ok_y = y % (dy << rpy) == 0
-                        || (y == tile.1 as u64 && ((res.y0 as u64) << lv) % (1u64 << rpy) != 0);
-                    let ok_x = x % (dx << rpx) == 0
-                        || (x == tile.0 as u64 && ((res.x0 as u64) << lv) % (1u64 << rpx) != 0);
+                    let ok_y = y.is_multiple_of(dy << rpy)
+                        || (y == tile.1 as u64
+                            && !((res.y0 as u64) << lv).is_multiple_of(1u64 << rpy));
+                    let ok_x = x.is_multiple_of(dx << rpx)
+                        || (x == tile.0 as u64
+                            && !((res.x0 as u64) << lv).is_multiple_of(1u64 << rpx));
                     if !ok_x || !ok_y {
                         return None;
                     }
@@ -745,12 +747,12 @@ pub(crate) fn decode_packet(
                         let mut seg_index = cb.segments.len();
                         let mut cur_passes = 0;
                         let mut cur_max = 0;
-                        if let Some(last) = cb.segments.last() {
-                            if last.passes < last.max_passes {
-                                seg_index -= 1;
-                                cur_passes = last.passes;
-                                cur_max = last.max_passes;
-                            }
+                        if let Some(last) = cb.segments.last()
+                            && last.passes < last.max_passes
+                        {
+                            seg_index -= 1;
+                            cur_passes = last.passes;
+                            cur_max = last.max_passes;
                         }
                         let mut virtual_segments: Vec<Segment> = Vec::new();
                         while remaining > 0 {

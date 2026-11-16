@@ -30,7 +30,7 @@ pub(crate) fn upsample(
     height: usize,
 ) -> Vec<u16> {
     let (fx, fy) = (hmax / h.max(1), vmax / v.max(1));
-    let integral = hmax % h == 0 && vmax % v == 0;
+    let integral = hmax.is_multiple_of(h) && vmax.is_multiple_of(v);
     let mut out = vec![0u16; width * height];
     if fx == 1 && fy == 1 && integral {
         for y in 0..height {
@@ -112,7 +112,7 @@ pub(crate) fn ycbcr_to_rgb(y: &[u16], cb: &[u16], cr: &[u16], precision: u8, out
     let max = (1i64 << precision) - 1;
     let center = 1i64 << (precision - 1);
     let (fr, fb, fgr, fgb) = (fix(1.40200), fix(1.77200), fix(0.71414), fix(0.34414));
-    for (i, px) in out.chunks_exact_mut(3).enumerate() {
+    for (i, px) in out.as_chunks_mut::<3>().0.iter_mut().enumerate() {
         let yy = y[i] as i64;
         let cbv = cb[i] as i64 - center;
         let crv = cr[i] as i64 - center;

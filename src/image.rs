@@ -145,13 +145,17 @@ impl Image {
             (1, 1) => Samples::U8(bytes[..count].iter().map(|&b| b & mask as u8).collect()),
             (2, 1) => Samples::U8(
                 bytes[..needed]
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|c| (u16::from_le_bytes([c[0], c[1]]) & mask) as u8)
                     .collect(),
             ),
             (2, 2) => Samples::U16(
                 bytes[..needed]
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|c| u16::from_le_bytes([c[0], c[1]]) & mask)
                     .collect(),
             ),

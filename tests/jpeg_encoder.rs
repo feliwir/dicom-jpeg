@@ -115,7 +115,9 @@ fn lossless_output_decodes_with_jpeg_decoder() {
             out.iter().map(|&v| v as i32).collect()
         } else {
             // jpeg-decoder returns native-endian 16-bit samples
-            out.chunks_exact(2)
+            out.as_chunks::<2>()
+                .0
+                .iter()
                 .map(|c| u16::from_ne_bytes([c[0], c[1]]) as i32)
                 .collect()
         };

@@ -37,7 +37,9 @@ fn read_pnm(data: &[u8]) -> (usize, usize, usize, Vec<i32>) {
     );
     let px = &data[i + 1..];
     let samples = if max > 255 {
-        px.chunks_exact(2)
+        px.as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| u16::from_be_bytes([c[0], c[1]]) as i32)
             .collect()
     } else {

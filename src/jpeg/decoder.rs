@@ -382,8 +382,8 @@ impl<'a> Decoder<'a> {
                 seg = &seg[65..];
             } else {
                 let v = seg.get(1..129).ok_or_else(truncated)?;
-                for (t, b) in table.iter_mut().zip(v.chunks_exact(2)) {
-                    *t = u16::from_be_bytes([b[0], b[1]]);
+                for (t, b) in table.iter_mut().zip(v.as_chunks::<2>().0) {
+                    *t = u16::from_be_bytes(*b);
                 }
                 seg = &seg[129..];
             }
@@ -567,7 +567,7 @@ impl<'a> Decoder<'a> {
             let mut n = 0usize;
             for by in 0..bh {
                 for bx in 0..bw {
-                    if restart > 0 && n > 0 && n % restart == 0 {
+                    if restart > 0 && n > 0 && n.is_multiple_of(restart) {
                         handle_restart(&mut reader, &mut pred);
                     }
                     decode_block(&mut reader, 0, &mut pred, bx, by)?;
@@ -579,7 +579,7 @@ impl<'a> Decoder<'a> {
             let mut n = 0usize;
             for my_ in 0..my {
                 for mx_ in 0..mx {
-                    if restart > 0 && n > 0 && n % restart == 0 {
+                    if restart > 0 && n > 0 && n.is_multiple_of(restart) {
                         handle_restart(&mut reader, &mut pred);
                     }
                     for (si, sc) in scan.components.iter().enumerate() {
@@ -676,7 +676,7 @@ impl<'a> Decoder<'a> {
             let mut n = 0usize;
             for y in 0..ch {
                 for x in 0..cw {
-                    if restart > 0 && n > 0 && n % restart == 0 {
+                    if restart > 0 && n > 0 && n.is_multiple_of(restart) {
                         reader.restart(rst_index);
                         rst_index = (rst_index + 1) & 7;
                         need_init[0] = true;
@@ -691,7 +691,7 @@ impl<'a> Decoder<'a> {
             let mut n = 0usize;
             for my_ in 0..my {
                 for mx_ in 0..mx {
-                    if restart > 0 && n > 0 && n % restart == 0 {
+                    if restart > 0 && n > 0 && n.is_multiple_of(restart) {
                         reader.restart(rst_index);
                         rst_index = (rst_index + 1) & 7;
                         for (si, sc) in scan.components.iter().enumerate() {

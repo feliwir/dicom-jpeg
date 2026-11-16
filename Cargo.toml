@@ -2,7 +2,7 @@
 name = "dicom-jpeg"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 description = "Pure-Rust JPEG-family codecs (JPEG, JPEG-LS, JPEG 2000, HTJ2K, JPEG XL) covering all active DICOM transfer syntaxes"
 keywords = ["dicom", "jpeg", "jpeg2000", "jpeg-ls", "jpeg-xl"]
