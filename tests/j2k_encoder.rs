@@ -64,6 +64,16 @@ fn expected(img: &Image) -> Vec<Vec<i32>> {
 
 #[test]
 fn lossless_sweep() {
+    lossless_sweep_with(false);
+}
+
+#[test]
+#[cfg(feature = "htj2k")]
+fn ht_lossless_sweep() {
+    lossless_sweep_with(true);
+}
+
+fn lossless_sweep_with(ht: bool) {
     for &(w, h) in &[(1u32, 1u32), (2, 3), (13, 7), (65, 33), (130, 70)] {
         for (nc, bits, signed) in [
             (1u16, 1u8, false),
@@ -80,18 +90,20 @@ fn lossless_sweep() {
                     let mut opts = EncoderOptions::default();
                     opts.levels = Some(levels);
                     opts.progression = progression;
+                    opts.high_throughput = ht;
+                    opts.tlm = ht;
                     let enc = encode_with(&img, &opts)
                         .unwrap_or_else(|e| panic!("{w}x{h} x{nc} {bits}b: {e}"));
                     assert!(!enc.lossy);
                     let comps = decode_components(&enc.data, &DecoderOptions::default())
                         .unwrap_or_else(|e| {
-                            panic!("{w}x{h} x{nc} {bits}b L{levels} P{progression}: {e}")
+                            panic!("{w}x{h} x{nc} {bits}b L{levels} P{progression} ht={ht}: {e}")
                         });
                     let got: Vec<Vec<i32>> = comps.into_iter().map(|c| c.data).collect();
                     assert_eq!(
                         got,
                         expected(&img),
-                        "{w}x{h} x{nc} {bits}b signed={signed} L{levels} P{progression}"
+                        "{w}x{h} x{nc} {bits}b signed={signed} L{levels} P{progression} ht={ht}"
                     );
                 }
             }
@@ -125,5 +137,64 @@ fn lossy_quality_is_monotonic_and_on_target() {
             (psnr - target).abs() < 2.5,
             "quality {quality}: PSNR {psnr:.2} vs target {target:.2}"
         );
+    }
+}
+
+/// The HT block coder is lossless with respect to the quantized coefficients,
+/// so an HT lossy stream must decode to exactly the same samples as the
+/// EBCOT stream with the same quantization.
+#[test]
+#[cfg(feature = "htj2k")]
+fn ht_lossy_matches_part1() {
+    for (w, h, nc, bits) in [
+        (200u32, 150u32, 3u16, 8u8),
+        (97, 61, 1, 12),
+        (64, 64, 1, 16),
+    ] {
+        let img = synthetic(w, h, nc, bits, false, w + h);
+        for quality in [20u8, 70, 95] {
+            let mut opts = EncoderOptions::default();
+            opts.reversible = false;
+            opts.quality = quality;
+            let part1 = encode_with(&img, &opts).unwrap();
+            opts.high_throughput = true;
+            let ht = encode_with(&img, &opts).unwrap();
+            assert!(ht.lossy);
+            let a = decode_components(&part1.data, &DecoderOptions::default()).unwrap();
+            let b = decode_components(&ht.data, &DecoderOptions::default()).unwrap();
+            for (x, y) in a.iter().zip(&b) {
+                assert_eq!(x.data, y.data, "{w}x{h} x{nc} {bits}b q{quality}");
+            }
+        }
+    }
+}
+
+/// RPCL + TLM streams split into one tile-part per resolution decode at
+/// every reduced resolution.
+#[test]
+#[cfg(feature = "htj2k")]
+fn ht_rpcl_tile_parts_reduce() {
+    let img = synthetic(130, 70, 1, 12, false, 9);
+    let mut opts = EncoderOptions::default();
+    opts.high_throughput = true;
+    opts.progression = 2;
+    opts.tlm = true;
+    opts.levels = Some(3);
+    let enc = encode_with(&img, &opts).unwrap();
+    // SOT markers: one per resolution.
+    let sots = enc.data.windows(2).filter(|m| m == &[0xFF, 0x90]).count();
+    assert!(
+        sots >= 4,
+        "expected 4 tile-parts, found {sots} SOT candidates"
+    );
+    assert!(
+        enc.data.windows(2).any(|m| m == [0xFF, 0x55]),
+        "TLM missing"
+    );
+    for reduce in 0..=3 {
+        let mut dopts = DecoderOptions::default();
+        dopts.reduce = reduce;
+        let comps = decode_components(&enc.data, &dopts).unwrap();
+        assert_eq!(comps[0].width, 130u32.div_ceil(1 << reduce));
     }
 }

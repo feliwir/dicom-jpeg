@@ -81,7 +81,7 @@ cases!(pending, "jpeg2000-part2", {
 });
 
 // ---- HTJ2K (15444-15) ----------------------------------------------------------------
-cases!(pending, "htj2k", {
+cases!(ready, "htj2k", {
     htj2k_lossless_ct1: "dicom/wg04/REF/CT1_UNC" => HtJ2kLossless, None, Exact;
     htj2k_lossless_mr2: "dicom/wg04/REF/MR2_UNC" => HtJ2kLossless, None, Exact;
     htj2k_lossless_rg1: "dicom/wg04/REF/RG1_UNC" => HtJ2kLossless, None, Exact;
