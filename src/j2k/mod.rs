@@ -23,7 +23,7 @@ mod tile;
 
 pub use decoder::{Component, DecoderOptions};
 #[cfg(feature = "encode")]
-pub use encoder::{EncoderOptions, encode_with};
+pub use encoder::{ComponentWavelet, EncoderOptions, encode_with};
 
 use crate::error::{Error, Result};
 use crate::{Codec, ColorSpace, DecodeOptions, Image, ImageInfo, Samples};
@@ -126,21 +126,44 @@ pub fn decode(data: &[u8], opts: &DecodeOptions) -> Result<Image> {
     Image::new(info, samples)
 }
 
+/// Whether a Part 2 encode of `info` benefits from the component-axis
+/// wavelet. A single RGB image is better served by the Part 1 RCT / ICT
+/// (the Part 2 syntaxes do not require a multiple component transform),
+/// and a single component has nothing to transform.
+#[cfg(feature = "encode")]
+pub(crate) fn part2_uses_wavelet(info: &ImageInfo) -> bool {
+    info.components > 1 && !(info.components == 3 && info.color_space == ColorSpace::Rgb)
+}
+
 /// Encode an image for the given transfer syntax.
 ///
 /// `Jpeg2000Lossless` is always lossless. `Jpeg2000` is lossless when
 /// `opts.quality` is `None` or 100, otherwise irreversible (9/7) with that
 /// quality. The HTJ2K syntaxes use the HT block coder with the same rules;
 /// `HtJ2kLosslessRpcl` additionally uses RPCL order, a TLM marker and one
-/// tile-part per resolution. Use [`encode_with`] for full control.
+/// tile-part per resolution. The Part 2 syntaxes apply a wavelet transform
+/// along all components (5/3 for lossless, 9/7 for lossy) before the
+/// spatial coding; a single RGB image uses RCT / ICT instead. Use [`encode_with`] for full control.
 #[cfg(feature = "encode")]
 pub fn encode(ts: TransferSyntax, image: &Image, opts: &EncodeOptions) -> Result<Encoded> {
     let lossy_requested = !matches!(opts.quality, None | Some(100..));
+    let part2 = matches!(
+        ts,
+        TransferSyntax::Jpeg2000Part2Lossless | TransferSyntax::Jpeg2000Part2
+    );
     let (reversible, high_throughput, rpcl) = match ts {
         TransferSyntax::Jpeg2000Lossless => (true, false, false),
         TransferSyntax::Jpeg2000 => (!lossy_requested, false, false),
+        #[cfg(feature = "jpeg2000-part2")]
+        TransferSyntax::Jpeg2000Part2Lossless => (true, false, false),
+        #[cfg(feature = "jpeg2000-part2")]
+        TransferSyntax::Jpeg2000Part2 => (!lossy_requested, false, false),
+        #[cfg(not(feature = "jpeg2000-part2"))]
         TransferSyntax::Jpeg2000Part2Lossless | TransferSyntax::Jpeg2000Part2 => {
-            return Err(Error::unsupported(CODEC, "Part 2 multi-component encoding"));
+            return Err(Error::unsupported(
+                CODEC,
+                "Part 2 multiple component transforms (enable the jpeg2000-part2 feature)",
+            ));
         }
         #[cfg(feature = "htj2k")]
         TransferSyntax::HtJ2kLossless => (true, true, false),
@@ -160,6 +183,8 @@ pub fn encode(ts: TransferSyntax, image: &Image, opts: &EncodeOptions) -> Result
         high_throughput,
         progression: if rpcl { 2 } else { 0 },
         tlm: rpcl,
+        component_wavelet: (part2 && part2_uses_wavelet(&image.info))
+            .then(|| ComponentWavelet::new(None, 1)),
         ..EncoderOptions::default()
     };
     encode_with(image, &params)

@@ -6,7 +6,7 @@
 
 use super::CODEC;
 use super::codestream::{Codestream, HeaderParams};
-#[cfg(all(test, feature = "encode"))]
+#[cfg(feature = "encode")]
 use super::dwt::Analyse;
 use super::dwt::{Plane, Sample};
 use crate::error::{Error, Result};
@@ -392,7 +392,7 @@ fn inverse_1d<T: Sample>(line: &[T], origin: u32, levels: u32) -> Vec<T> {
 }
 
 /// Forward 1D multi-level DWT; output ordered LL_NL, HL_NL, ..., HL_1.
-#[cfg(all(test, feature = "encode"))]
+#[cfg(feature = "encode")]
 pub(crate) fn forward_1d<T: Analyse>(line: &[T], origin: u32, levels: u32) -> Vec<T> {
     let n = line.len();
     let mut cur = line.to_vec();
@@ -417,6 +417,45 @@ pub(crate) fn forward_1d<T: Analyse>(line: &[T], origin: u32, levels: u32) -> Ve
         cur.extend(h);
     }
     cur
+}
+
+/// Forward wavelet transform along the component axis (T.801 J.3.2.2) of
+/// the components listed in `order` (the W indices of one collection).
+/// Returns the transformed components C_0..C_n in sub-band order.
+#[cfg(feature = "encode")]
+pub(crate) fn forward_components<T: Analyse>(
+    planes: &[Vec<T>],
+    order: &[usize],
+    levels: u32,
+) -> Vec<Vec<T>> {
+    let n = planes.first().map_or(0, Vec::len);
+    let mut out: Vec<Vec<T>> = (0..order.len()).map(|_| Vec::with_capacity(n)).collect();
+    let mut line = Vec::with_capacity(order.len());
+    #[allow(clippy::needless_range_loop)] // indexes every plane at `s`
+    for s in 0..n {
+        line.clear();
+        line.extend(order.iter().map(|&c| planes[c][s]));
+        for (o, v) in out.iter_mut().zip(forward_1d(&line, 0, levels)) {
+            o.push(v);
+        }
+    }
+    out
+}
+
+/// Squared L2 norm of the component-axis synthesis basis function of every
+/// transformed component: how strongly an error in C_k reaches the output.
+#[cfg(feature = "encode")]
+pub(crate) fn synthesis_weights(n: usize, levels: u32) -> Vec<f64> {
+    (0..n)
+        .map(|k| {
+            let mut line = vec![0f32; n];
+            line[k] = 1.0;
+            inverse_1d(&line, 0, levels)
+                .iter()
+                .map(|&v| (v as f64) * (v as f64))
+                .sum()
+        })
+        .collect()
 }
 
 #[cfg(all(test, feature = "encode"))]

@@ -198,3 +198,116 @@ fn ht_rpcl_tile_parts_reduce() {
         assert_eq!(comps[0].width, 130u32.div_ceil(1 << reduce));
     }
 }
+
+/// Part 2 wavelet-based multiple component transform: lossless round trips
+/// over component counts, interleave factors, levels and sample formats.
+#[test]
+#[cfg(feature = "jpeg2000-part2")]
+fn part2_lossless_sweep() {
+    use dicom_jpeg::j2k::ComponentWavelet;
+    for (nc, interleave) in [
+        (1u16, 1u16),
+        (2, 1),
+        (5, 1),
+        (9, 3),
+        (16, 1),
+        (30, 3),
+        (300, 1),
+    ] {
+        for (bits, signed) in [
+            (1u8, false),
+            (8, false),
+            (12, true),
+            (16, false),
+            (16, true),
+        ] {
+            let (w, h) = if nc > 100 { (9, 5) } else { (37, 21) };
+            let img = synthetic(w, h, nc, bits, signed, nc as u32 * 31 + bits as u32);
+            let max_levels = 31 - (nc as u32).leading_zeros();
+            for cl in [None, Some(0u8), Some(max_levels as u8)] {
+                let mut opts = EncoderOptions::default();
+                opts.levels = Some(2);
+                opts.component_wavelet = Some(ComponentWavelet::new(cl, interleave));
+                let enc = encode_with(&img, &opts)
+                    .unwrap_or_else(|e| panic!("x{nc}/{interleave} {bits}b {cl:?}: {e}"));
+                assert!(!enc.lossy);
+                let comps = decode_components(&enc.data, &DecoderOptions::default())
+                    .unwrap_or_else(|e| panic!("x{nc}/{interleave} {bits}b {cl:?}: {e}"));
+                assert!(
+                    comps
+                        .iter()
+                        .all(|c| c.precision == bits && c.signed == signed)
+                );
+                let got: Vec<Vec<i32>> = comps.into_iter().map(|c| c.data).collect();
+                assert!(
+                    got == expected(&img),
+                    "x{nc}/{interleave} {bits}b signed={signed} {cl:?}"
+                );
+            }
+        }
+    }
+}
+
+/// Lossy Part 2 (9/7 along the components) meets the quality target and
+/// compresses correlated components better than coding them independently.
+#[test]
+#[cfg(feature = "jpeg2000-part2")]
+fn part2_lossy_quality() {
+    use dicom_jpeg::j2k::ComponentWavelet;
+    let (w, h, nc) = (96u32, 80u32, 12u16);
+    // A slowly changing "volume": every component is a shifted version of a
+    // textured slice.
+    let mut v = Vec::new();
+    for y in 0..h {
+        for x in 0..w {
+            for c in 0..nc as u32 {
+                let t = ((x * 7 + y * 3 + c) % 64) as f64;
+                let val =
+                    2000.0 + 900.0 * (t / 10.0).sin() + 40.0 * c as f64 + ((x ^ y) & 15) as f64;
+                v.push(val as u16);
+            }
+        }
+    }
+    let info = ImageInfo {
+        width: w,
+        height: h,
+        components: nc,
+        bits_per_sample: 12,
+        signed: false,
+        color_space: ColorSpace::Unknown,
+    };
+    let img = Image::new(info, Samples::U16(v)).unwrap();
+    let reference = expected(&img);
+    let encode = |part2: bool| {
+        let mut opts = EncoderOptions::default();
+        opts.reversible = false;
+        opts.quality = 80;
+        opts.component_wavelet = part2.then(|| ComponentWavelet::new(None, 1));
+        encode_with(&img, &opts).unwrap()
+    };
+    let (p1, p2) = (encode(false), encode(true));
+    assert!(p2.lossy);
+    let comps = decode_components(&p2.data, &DecoderOptions::default()).unwrap();
+    let mse = comps
+        .iter()
+        .zip(&reference)
+        .flat_map(|(c, r)| c.data.iter().zip(r).map(|(a, b)| ((a - b) as f64).powi(2)))
+        .sum::<f64>()
+        / (w * h * nc as u32) as f64;
+    let (lo, hi) = reference
+        .iter()
+        .flatten()
+        .fold((i32::MAX, i32::MIN), |(a, b), &v| (a.min(v), b.max(v)));
+    let psnr = 10.0 * (((hi - lo) as f64).powi(2) / mse).log10();
+    let target = 26.0 + 0.23 * 80.0;
+    assert!(
+        (psnr - target).abs() < 2.5,
+        "PSNR {psnr:.2} vs target {target:.2}"
+    );
+    assert!(
+        p2.data.len() < p1.data.len(),
+        "part 2 {} bytes vs part 1 {} bytes",
+        p2.data.len(),
+        p1.data.len()
+    );
+}

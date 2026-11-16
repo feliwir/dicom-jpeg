@@ -37,6 +37,32 @@ pub struct EncoderOptions {
     /// every resolution level also gets its own tile-part, so a decoder can
     /// stop after any resolution.
     pub tlm: bool,
+    /// JPEG 2000 Part 2 wavelet-based multiple component transform
+    /// (ITU-T T.801 J.3.2) along the component axis: 5/3 when `reversible`,
+    /// 9/7 otherwise. Replaces RCT / ICT and writes the CBD, MCT, MCC and
+    /// MCO marker segments.
+    pub component_wavelet: Option<ComponentWavelet>,
+}
+
+/// Parameters of the Part 2 component-axis wavelet transform.
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct ComponentWavelet {
+    /// Decomposition levels along the components (`None` = up to 5,
+    /// limited by the component count).
+    pub levels: Option<u8>,
+    /// Interleave factor `k`: the transform runs over components
+    /// 0, k, 2k, ..., then 1, k + 1, ..., so that interleaved samples (e.g.
+    /// the R, G, B planes of consecutive frames) form smooth runs. 0 and 1
+    /// keep the natural order.
+    pub interleave: u16,
+}
+
+impl ComponentWavelet {
+    /// A component wavelet transform with the given interleave factor.
+    pub fn new(levels: Option<u8>, interleave: u16) -> Self {
+        ComponentWavelet { levels, interleave }
+    }
 }
 
 impl Default for EncoderOptions {
@@ -49,6 +75,7 @@ impl Default for EncoderOptions {
             color_transform: true,
             high_throughput: false,
             tlm: false,
+            component_wavelet: None,
         }
     }
 }
@@ -295,7 +322,39 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
                 .collect()
         })
         .collect();
-    let mct = opts.color_transform && nc >= 3 && info.color_space == ColorSpace::Rgb;
+    // Part 2: the order of the transformed collection and its levels.
+    let part2 = match &opts.component_wavelet {
+        None => None,
+        Some(cw) => {
+            let k = (cw.interleave.max(1) as usize).min(nc);
+            if !nc.is_multiple_of(k) {
+                return Err(Error::input(
+                    "component count is not a multiple of the interleave factor",
+                ));
+            }
+            let order: Vec<usize> = (0..k).flat_map(|s| (s..nc).step_by(k)).collect();
+            let max_levels = 31 - (nc as u32).leading_zeros();
+            let levels = match cw.levels {
+                Some(l) if l as u32 > max_levels => {
+                    return Err(Error::input("too many component wavelet levels"));
+                }
+                Some(l) => l as u32,
+                None => max_levels.min(5),
+            };
+            Some((order, levels))
+        }
+    };
+    let mct =
+        part2.is_none() && opts.color_transform && nc >= 3 && info.color_space == ColorSpace::Rgb;
+    // Precision and signedness of the codestream components; with a
+    // component transform they are signed and may need extra bits.
+    let mut cs_prec = prec;
+    let cs_signed = info.signed || part2.is_some();
+    // Range needed to hold the signed values `lo..=hi` in two's complement.
+    let signed_bits = |lo: i64, hi: i64| -> u32 {
+        let m = hi.max(-lo - 1).max(0) as u64;
+        65 - m.leading_zeros()
+    };
 
     let reversible = opts.reversible;
     let guard: u32;
@@ -303,6 +362,13 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
     let mut quants: Vec<Quantization> = Vec::with_capacity(nc);
 
     if reversible {
+        if let Some((order, cl)) = &part2 {
+            planes = super::mct::forward_components(&planes, order, *cl);
+            let (lo, hi) = planes.iter().flatten().fold((0i64, 0i64), |(a, b), &v| {
+                (a.min(v as i64), b.max(v as i64))
+            });
+            cs_prec = cs_prec.max(signed_bits(lo, hi));
+        }
         if mct {
             for i in 0..planes[0].len() {
                 let (r, g, b) = (planes[0][i], planes[1][i], planes[2][i]);
@@ -330,7 +396,7 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
                     (
                         (needed + 1)
                             .saturating_sub(guard)
-                            .max(prec + band_gain(b.orient)) as u8,
+                            .max(cs_prec + band_gain(b.orient)) as u8,
                         0u16,
                     )
                 })
@@ -343,7 +409,20 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
             band_sets.push(bands);
         }
     } else {
-        let fplanes: Vec<Vec<f32>> = if mct {
+        let fplanes: Vec<Vec<f32>> = if let Some((order, cl)) = &part2 {
+            let f: Vec<Vec<f32>> = planes
+                .iter()
+                .map(|p| p.iter().map(|&v| v as f32).collect())
+                .collect();
+            let f = super::mct::forward_components(&f, order, *cl);
+            let (lo, hi) = f
+                .iter()
+                .flatten()
+                .fold((0f32, 0f32), |(a, b), &v| (a.min(v), b.max(v)));
+            // One extra bit for quantization overshoot.
+            cs_prec = cs_prec.max(signed_bits(lo.floor() as i64, hi.ceil() as i64) + 1);
+            f
+        } else if mct {
             let mut f: Vec<Vec<f32>> = planes
                 .iter()
                 .map(|p| p.iter().map(|&v| v as f32).collect())
@@ -361,11 +440,20 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
                 .map(|p| p.iter().map(|&v| v as f32).collect())
                 .collect()
         };
-        let (lo, hi) = fplanes
-            .iter()
-            .flatten()
-            .fold((f32::MAX, f32::MIN), |(a, b), &v| (a.min(v), b.max(v)));
-        let range = ((hi - lo) as f64).max(1.0);
+        // Dynamic range of the image samples the quality target refers to.
+        let range = if part2.is_some() {
+            let (lo, hi) = planes
+                .iter()
+                .flatten()
+                .fold((i32::MAX, i32::MIN), |(a, b), &v| (a.min(v), b.max(v)));
+            ((hi as f64) - (lo as f64)).max(1.0)
+        } else {
+            let (lo, hi) = fplanes
+                .iter()
+                .flatten()
+                .fold((f32::MAX, f32::MIN), |(a, b), &v| (a.min(v), b.max(v)));
+            ((hi - lo) as f64).max(1.0)
+        };
         let pixels = (w as f64 * h as f64 * nc as f64).max(1.0);
         let decomposed: Vec<Vec<(Orient, Plane<f32>)>> = fplanes
             .into_iter()
@@ -397,7 +485,7 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
             (0..nbands)
                 .map(|i| {
                     let (_, o) = band_level(i, levels);
-                    let r = prec + band_gain(o);
+                    let r = cs_prec + band_gain(o);
                     let (e, m) = encode_step(base / norms[i], r);
                     (e, m, step_value(e, m, r))
                 })
@@ -408,7 +496,13 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
         // Error energy of each component as seen in the output samples: with ICT
         // an error in Y, Cb or Cr reaches all three of R, G, B (sum of squared
         // inverse-transform coefficients of that column).
+        let component_weights = part2
+            .as_ref()
+            .map(|(order, cl)| super::mct::synthesis_weights(order.len(), *cl));
         let weight = |c: usize| -> f64 {
+            if let Some(wts) = &component_weights {
+                return wts[c];
+            }
             match (mct, c) {
                 (true, 0) => 3.0,
                 (true, 1) => 0.344_136f64.powi(2) + 1.772f64.powi(2),
@@ -490,9 +584,15 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
         reversible,
         precincts: vec![(15, 15); levels as usize + 1],
     };
+    if cs_prec > 38 {
+        return Err(Error::unsupported(
+            CODEC,
+            "component transform output exceeds 38 bits",
+        ));
+    }
     let siz = ComponentSiz {
-        precision: prec as u8,
-        signed: info.signed,
+        precision: cs_prec as u8,
+        signed: cs_signed,
         dx: 1,
         dy: 1,
     };
@@ -642,14 +742,16 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
     // Codestream.
     let mut out = vec![0xFF, 0x4F];
     let mut siz_seg = Vec::new();
-    siz_seg.extend_from_slice(&0u16.to_be_bytes());
+    // Rsiz: Part 2 with the multiple component transformation capability.
+    let rsiz: u16 = if part2.is_some() { 0x8100 } else { 0 };
+    siz_seg.extend_from_slice(&rsiz.to_be_bytes());
     for v in [w, h, 0, 0, w, h, 0, 0] {
         siz_seg.extend_from_slice(&v.to_be_bytes());
     }
     siz_seg.extend_from_slice(&(nc as u16).to_be_bytes());
     for _ in 0..nc {
         siz_seg.extend_from_slice(&[
-            ((prec - 1) as u8) | if info.signed { 0x80 } else { 0 },
+            ((cs_prec - 1) as u8) | if cs_signed { 0x80 } else { 0 },
             1,
             1,
         ]);
@@ -680,7 +782,8 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
     }
     let mut cod = vec![0u8, opts.progression];
     cod.extend_from_slice(&1u16.to_be_bytes());
-    cod.push(mct as u8);
+    // SGcod MCT: 1 = RCT / ICT, 4 = wavelet-based multiple component transform.
+    cod.push(if part2.is_some() { 4 } else { mct as u8 });
     cod.extend_from_slice(&[levels as u8, 4, 4, coding.cblk_style, reversible as u8]);
     segment(&mut out, 0xFF52, &cod);
     let quant_payload = |q: &Quantization| {
@@ -705,6 +808,9 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
             p.extend(quant_payload(q));
             segment(&mut out, 0xFF5D, &p);
         }
+    }
+    if let Some((order, cl)) = &part2 {
+        write_part2_markers(&mut out, order, *cl, prec, info.signed, reversible)?;
     }
     // Tile-parts: one per resolution for resolution-major orders with TLM.
     let mut cuts = if opts.tlm && resolution_major {
@@ -745,6 +851,103 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
         transform,
         lossy: !reversible,
     })
+}
+
+/// Marker segments of a single-stage, single-collection wavelet-based
+/// multiple component transform (T.801 A.3.6 - A.3.9): MCO, CBD, MCC and
+/// the MCT offset array that undoes the DC level shift.
+fn write_part2_markers(
+    out: &mut Vec<u8>,
+    order: &[usize],
+    levels: u32,
+    prec: u32,
+    signed: bool,
+    reversible: bool,
+) -> Result<()> {
+    let nc = order.len();
+    // MCO: one stage using MCC index 1.
+    segment(out, 0xFF77, &[1, 1]);
+    // CBD: all reconstructed components share one bit depth.
+    let mut cbd = (0x8000u16 | nc as u16).to_be_bytes().to_vec();
+    cbd.push(((prec - 1) as u8) | if signed { 0x80 } else { 0 });
+    segment(out, 0xFF78, &cbd);
+    // MCC: one wavelet collection, C_k = k and W in transform order.
+    let wide = nc > 256;
+    let mut coll = vec![3u8];
+    let count = (nc as u16) | if wide { 0x8000 } else { 0 };
+    let index = |v: usize, d: &mut Vec<u8>| {
+        if wide {
+            d.extend_from_slice(&(v as u16).to_be_bytes());
+        } else {
+            d.push(v as u8);
+        }
+    };
+    coll.extend_from_slice(&count.to_be_bytes());
+    (0..nc).for_each(|k| index(k, &mut coll));
+    coll.extend_from_slice(&count.to_be_bytes());
+    order.iter().for_each(|&w| index(w, &mut coll));
+    let offset_index: u32 = if signed { 0 } else { 1 };
+    let kernel: u32 = if reversible { 1 } else { 0 };
+    let t = (levels << 16) | (offset_index << 8) | kernel;
+    coll.extend_from_slice(&t.to_be_bytes()[1..]);
+    coll.extend_from_slice(&0u32.to_be_bytes());
+    // Zmcc, Imcc (and Ymcc, Qmcc in the first segment).
+    write_series(out, 0xFF75, &coll, |z, last| {
+        let mut h = (z as u16).to_be_bytes().to_vec();
+        h.push(1);
+        if z == 0 {
+            h.extend_from_slice(&(last as u16).to_be_bytes());
+            h.extend_from_slice(&1u16.to_be_bytes());
+        }
+        h
+    })?;
+    if !signed {
+        // MCT offset array (type 2, index 1): the DC level shift.
+        let shift = 1i64 << (prec - 1);
+        let (dtype, data): (u16, Vec<u8>) = if shift <= i16::MAX as i64 {
+            (
+                0,
+                (0..nc).flat_map(|_| (shift as i16).to_be_bytes()).collect(),
+            )
+        } else {
+            (
+                1,
+                (0..nc).flat_map(|_| (shift as i32).to_be_bytes()).collect(),
+            )
+        };
+        let imct = (dtype << 10) | (2 << 8) | 1;
+        write_series(out, 0xFF74, &data, |z, last| {
+            let mut h = (z as u16).to_be_bytes().to_vec();
+            h.extend_from_slice(&imct.to_be_bytes());
+            if z == 0 {
+                h.extend_from_slice(&(last as u16).to_be_bytes());
+            }
+            h
+        })?;
+    }
+    Ok(())
+}
+
+/// Write `data` as a series of marker segments with index Z = 0, 1, ...;
+/// `header(z, last_z)` builds each segment's leading fields.
+fn write_series(
+    out: &mut Vec<u8>,
+    marker: u16,
+    data: &[u8],
+    header: impl Fn(usize, usize) -> Vec<u8>,
+) -> Result<()> {
+    const CHUNK: usize = 65_000;
+    let chunks: Vec<&[u8]> = data.chunks(CHUNK).collect();
+    let last = chunks.len().saturating_sub(1);
+    if last > u16::MAX as usize {
+        return Err(Error::unsupported(CODEC, "marker segment series too long"));
+    }
+    for (z, c) in chunks.iter().enumerate() {
+        let mut p = header(z, last);
+        p.extend_from_slice(c);
+        segment(out, marker, &p);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
