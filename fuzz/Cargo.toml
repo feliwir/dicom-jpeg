@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-dicom-jpeg = { path = "..", default-features = false, features = ["jpeg", "jpeg-ls", "jpeg2000", "htj2k", "jpeg-xl"] }
+dicom-jpeg = { path = "..", default-features = false, features = ["jpeg", "jpeg-ls", "jpeg2000", "jpeg2000-part2", "htj2k", "jpeg-xl"] }
 
 [workspace]
 members = ["."]
