@@ -133,6 +133,8 @@ pub(crate) const CS_XYB: u32 = 2;
 #[derive(Debug, Clone)]
 pub(crate) struct ColorEncoding {
     pub(crate) want_icc: bool,
+    /// sRGB primaries with a D65 white point.
+    pub(crate) srgb_gamut: bool,
     pub(crate) color_space: u32,
     /// Transfer function enum, or `None` for a gamma value.
     pub(crate) transfer: Option<u32>,
@@ -143,6 +145,7 @@ impl Default for ColorEncoding {
     fn default() -> Self {
         ColorEncoding {
             want_icc: false,
+            srgb_gamut: true,
             color_space: CS_RGB,
             transfer: Some(13),
             gamma: 0,
@@ -174,6 +177,7 @@ impl ColorEncoding {
         };
         if !want_icc && color_space != CS_XYB {
             let wp = br.enumeration()?;
+            ce.srgb_gamut &= wp == 1;
             match wp {
                 1 | 10 | 11 => {}
                 2 => {
@@ -183,7 +187,9 @@ impl ColorEncoding {
                 _ => return Err(invalid("unknown white point")),
             }
             if color_space != CS_GRAY {
-                match br.enumeration()? {
+                let pr = br.enumeration()?;
+                ce.srgb_gamut &= pr == 1;
+                match pr {
                     1 | 9 | 11 => {}
                     2 => {
                         for _ in 0..6 {
@@ -264,6 +270,7 @@ pub(crate) struct ImageHeader {
     pub(crate) xyb_encoded: bool,
     pub(crate) color: ColorEncoding,
     pub(crate) opsin: OpsinInverse,
+    pub(crate) intensity_target: f32,
     /// Custom upsampling weights for 2x, 4x and 8x (`None` = defaults).
     pub(crate) up_weights: [Option<Vec<f32>>; 3],
 }
@@ -357,6 +364,7 @@ impl ImageHeader {
             xyb_encoded: true,
             color: ColorEncoding::default(),
             opsin: OpsinInverse::default(),
+            intensity_target: 255.0,
             up_weights: [None, None, None],
         };
         if !br.read_bool()? {
@@ -388,7 +396,10 @@ impl ImageHeader {
             h.color = ColorEncoding::read(br)?;
             if extra_fields && !br.read_bool()? {
                 // Tone mapping.
-                br.f16()?;
+                h.intensity_target = br.f16()?;
+                if h.intensity_target <= 0.0 {
+                    return Err(invalid("invalid intensity target"));
+                }
                 br.f16()?;
                 br.read_bool()?;
                 br.f16()?;

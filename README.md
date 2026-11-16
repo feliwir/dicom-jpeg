@@ -10,7 +10,7 @@ Each codec sits behind its own cargo feature.
 | .90 .91 | JPEG 2000 (15444-1) | `jpeg2000` | decoder ✔ encoder ✔ |
 | .92 .93 | JPEG 2000 Part 2 multi-component | `jpeg2000-part2` | decoder ✔ encoder ✔ |
 | .201 .202 .203 | HTJ2K (15444-15) | `htj2k` | decoder ✔ encoder ✔ |
-| .110 .111 .112 | JPEG XL (18181) | `jpeg-xl` | decoder: lossless modular only; encoder: lossless |
+| .110 .111 .112 | JPEG XL (18181) | `jpeg-xl` | decoder: modular and VarDCT (sRGB, no ICC, no patches/noise/splines/blending); encoder: lossless |
 
 Other features:
 

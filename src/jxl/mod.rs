@@ -11,6 +11,8 @@ mod entropy;
 mod frame;
 mod headers;
 mod modular;
+mod render;
+mod vardct;
 
 use crate::error::{Error, Result};
 use crate::{Codec, ColorSpace, DecodeOptions, Image, ImageInfo, Samples};
@@ -107,7 +109,17 @@ fn image_info(ih: &ImageHeader) -> ImageInfo {
 struct Canvas {
     width: usize,
     height: usize,
-    planes: Vec<Vec<i32>>,
+    frame: FrameOut,
+}
+
+/// Colour planes of a decoded frame.
+enum FrameOut {
+    /// Integer samples (modular, no XYB, no filters).
+    Int(Vec<Vec<i32>>),
+    /// Samples normalised to [0, 1] (modular without XYB, filtered).
+    Normalised([Vec<f32>; 3]),
+    /// Linear-light sRGB (from XYB).
+    Linear([Vec<f32>; 3]),
 }
 
 /// Decode a complete codestream or container.
@@ -122,9 +134,6 @@ pub fn decode(data: &[u8], opts: &DecodeOptions) -> Result<Image> {
     }
     if ih.bit_depth.bits > 16 {
         return Err(Error::unsupported(CODEC, "more than 16 bits per sample"));
-    }
-    if ih.xyb_encoded {
-        return Err(Error::unsupported(CODEC, "XYB-encoded (lossy) images"));
     }
     let alloc_limit = opts.limits.max_alloc_bytes;
     let mut pos = br.byte_pos();
@@ -160,11 +169,11 @@ pub fn decode(data: &[u8], opts: &DecodeOptions) -> Result<Image> {
                     "frame blending, cropping or upsampling",
                 ));
             }
-            let planes = decode_frame(&ih, &fh, &toc, frame_data, alloc_limit)?;
+            let frame = decode_frame(&ih, &fh, &toc, frame_data, alloc_limit)?;
             canvas = Some(Canvas {
                 width: ih.width as usize,
                 height: ih.height as usize,
-                planes,
+                frame,
             });
         } else if fh.frame_type == frame::FRAME_LF || fh.save_as_reference != 0 {
             return Err(Error::unsupported(CODEC, "LF and reference frames"));
@@ -185,21 +194,18 @@ fn decode_frame(
     toc: &Toc,
     data: &[u8],
     alloc_limit: u64,
-) -> Result<Vec<Vec<i32>>> {
-    if !fh.modular {
-        return Err(Error::unsupported(CODEC, "VarDCT frames"));
-    }
+) -> Result<FrameOut> {
     if fh.do_ycbcr {
-        return Err(Error::unsupported(CODEC, "YCbCr modular frames"));
+        return Err(Error::unsupported(
+            CODEC,
+            "YCbCr frames (JPEG recompression)",
+        ));
+    }
+    if !fh.modular && !ih.xyb_encoded {
+        return Err(Error::unsupported(CODEC, "VarDCT frames without XYB"));
     }
     if fh.flags & (frame::FLAG_PATCHES | frame::FLAG_SPLINES | frame::FLAG_NOISE) != 0 {
         return Err(Error::unsupported(CODEC, "patches, splines and noise"));
-    }
-    if fh.gaborish || fh.epf_iters > 0 {
-        return Err(Error::unsupported(
-            CODEC,
-            "restoration filters (Gaborish, EPF)",
-        ));
     }
     if fh.flags & frame::FLAG_USE_LF_FRAME != 0 {
         return Err(Error::unsupported(CODEC, "LF frames"));
@@ -209,9 +215,22 @@ fn decode_frame(
     {
         return Err(Error::unsupported(CODEC, "upsampled extra channels"));
     }
+    if ih
+        .extra_channels
+        .iter()
+        .any(|e| e.kind == headers::EC_ALPHA && e.alpha_associated)
+    {
+        return Err(Error::unsupported(CODEC, "premultiplied alpha"));
+    }
+    if ih.xyb_encoded && (ih.color.want_icc || !ih.color.srgb_gamut) {
+        return Err(Error::unsupported(
+            CODEC,
+            "XYB images with ICC profiles or non-sRGB primaries",
+        ));
+    }
     let (w, h) = fh.sample_size();
     let (w, h) = (w as usize, h as usize);
-    let n_color = fh.color_channels;
+    let n_color = if fh.modular { fh.color_channels } else { 0 };
     let n_ec = ih.extra_channels.len();
     let group_dim = fh.group_dim() as usize;
     let num_lf_groups = fh.num_lf_groups();
@@ -219,27 +238,47 @@ fn decode_frame(
     let single = toc.sections.len() == 1;
 
     // Section readers: one shared reader for a single-section frame.
-    let section = |i: usize| -> Result<BitReader<'_>> {
+    fn section<'a>(data: &'a [u8], toc: &Toc, i: usize) -> Result<BitReader<'a>> {
         let (off, size) = toc.sections[i];
         data.get(off..off + size)
             .map(BitReader::new)
             .ok_or(Error::Truncated { codec: CODEC })
+    }
+    let mut shared = if single {
+        Some(section(data, toc, 0)?)
+    } else {
+        None
     };
-    let mut shared = if single { Some(section(0)?) } else { None };
-
-    // LfGlobal.
-    let mut br = match shared.take() {
-        Some(b) => b,
-        None => section(0)?,
-    };
-    // LfChannelDequantization.
-    if !br.read_bool()? {
-        for _ in 0..3 {
-            br.f16()?;
+    fn take_section<'a>(
+        shared: &mut Option<BitReader<'a>>,
+        data: &'a [u8],
+        toc: &Toc,
+        i: usize,
+    ) -> Result<BitReader<'a>> {
+        match shared.take() {
+            Some(b) => Ok(b),
+            None => section(data, toc, i),
         }
     }
+
+    // LfGlobal.
+    let mut br = take_section(&mut shared, data, toc, 0)?;
+    let mut m_lf = [1.0 / 32.0, 1.0 / 4.0, 1.0 / 2.0];
+    if !br.read_bool()? {
+        for m in &mut m_lf {
+            *m = br.f16()?;
+        }
+        if m_lf.iter().any(|&m| m / 128.0 < 1e-8) {
+            return Err(invalid("LF dequantisation weight too small"));
+        }
+    }
+    let vg = if fh.modular {
+        None
+    } else {
+        Some(vardct::LfGlobalVarDct::read(&mut br)?)
+    };
     let global_cfg = if br.read_bool()? {
-        let limit = (1024 + w as u64 * h as u64 * (n_color + n_ec) as u64 / 16).min(1 << 22);
+        let limit = (1024 + w as u64 * h as u64 * (n_color.max(3) + n_ec) as u64 / 16).min(1 << 22);
         Some(MaConfig::read(&mut br, limit as usize)?)
     } else {
         None
@@ -260,12 +299,9 @@ fn decode_frame(
         false,
         alloc_limit,
     )?;
-
-    // First channel left for the groups.
     let beginc = (full.nb_meta..full.channels.len())
         .find(|&c| full.channels[c].w > group_dim || full.channels[c].h > group_dim)
         .unwrap_or(full.channels.len());
-
     if single {
         shared = Some(br);
     }
@@ -273,38 +309,93 @@ fn decode_frame(
     let (lgx_count, _) = fh.lf_groups();
     let lf_dim = group_dim * 8;
 
-    // LfGroups: channels with shift >= 3.
+    // LF groups.
+    let mut lf_groups = Vec::new();
     for i in 0..num_lf_groups {
-        let mut br = match shared.take() {
-            Some(b) => b,
-            None => section(1 + i as usize)?,
-        };
+        let mut br = take_section(&mut shared, data, toc, 1 + i as usize)?;
         let gx = (i % lgx_count) as usize;
         let gy = (i / lgx_count) as usize;
-        decode_group(
-            &mut br,
-            &mut full,
-            beginc,
-            (gx * lf_dim, gy * lf_dim, lf_dim),
-            (3, i32::MAX),
-            1 + num_lf_groups + i,
-            global_cfg.as_ref(),
-            alloc_limit,
-        )?;
+        let (x0, y0) = (gx * lf_dim, gy * lf_dim);
+        let stream = 1 + num_lf_groups + i;
+        let mut modular_part = |br: &mut BitReader| {
+            decode_group(
+                br,
+                &mut full,
+                beginc,
+                (x0, y0, lf_dim),
+                (3, i32::MAX),
+                stream,
+                global_cfg.as_ref(),
+                alloc_limit,
+            )
+        };
+        if let Some(vg) = &vg {
+            let rect = (x0, y0, lf_dim.min(w - x0), lf_dim.min(h - y0));
+            lf_groups.push(vardct::read_lf_group(
+                &mut br,
+                fh,
+                vg,
+                m_lf,
+                i,
+                rect,
+                global_cfg.as_ref(),
+                alloc_limit,
+                &mut modular_part,
+            )?);
+        } else {
+            modular_part(&mut br)?;
+        }
         if single {
             shared = Some(br);
         }
     }
-    // HfGlobal is empty for modular frames.
+    // HfGlobal.
+    let hg = match &vg {
+        Some(vg) => {
+            let mut br = take_section(&mut shared, data, toc, 1 + num_lf_groups as usize)?;
+            let hg = vardct::read_hf_global(&mut br, fh, vg, global_cfg.as_ref(), alloc_limit)?;
+            if single {
+                shared = Some(br);
+            }
+            Some(hg)
+        }
+        None => None,
+    };
+    let (bw, bh) = (w.div_ceil(8), h.div_ceil(8));
+    let mut coeffs = vardct::Coefficients {
+        stride: bw * 8,
+        data: std::array::from_fn(|_| {
+            if vg.is_some() {
+                vec![0; bw * 8 * bh * 8]
+            } else {
+                Vec::new()
+            }
+        }),
+    };
+    // Pass groups.
     for pass in 0..fh.passes.num_passes {
         let (min_shift, max_shift) = shift_bracket(fh, pass);
         for g in 0..num_groups {
-            let mut br = match shared.take() {
-                Some(b) => b,
-                None => section(2 + num_lf_groups as usize + (pass * num_groups + g) as usize)?,
-            };
+            let mut br = take_section(
+                &mut shared,
+                data,
+                toc,
+                2 + num_lf_groups as usize + (pass * num_groups + g) as usize,
+            )?;
             let gx = (g % gx_count) as usize;
             let gy = (g / gx_count) as usize;
+            if let (Some(vg), Some(hg)) = (&vg, &hg) {
+                vardct::read_hf_coefficients(
+                    &mut br,
+                    fh,
+                    vg,
+                    hg,
+                    &lf_groups,
+                    pass as usize,
+                    (gx, gy),
+                    &mut coeffs,
+                )?;
+            }
             decode_group(
                 &mut br,
                 &mut full,
@@ -321,17 +412,99 @@ fn decode_frame(
         }
     }
     full.undo_transforms()?;
-    if full.channels.len() < n_color {
-        return Err(invalid("modular image lost its colour channels"));
-    }
-    let mut planes = Vec::with_capacity(n_color);
-    for c in full.channels.into_iter().take(n_color) {
-        if c.w != w || c.h != h {
-            return Err(invalid("colour channel has the wrong size"));
+
+    // Colour planes before filtering.
+    let mut planes: [Vec<f32>; 3];
+    let mut sigma = Vec::new();
+    if let (Some(vg), Some(hg)) = (&vg, &hg) {
+        let rec = vardct::reconstruct(
+            fh,
+            vg,
+            hg,
+            &lf_groups,
+            coeffs,
+            m_lf,
+            ih.opsin.quant_bias,
+            ih.opsin.quant_bias_numerator,
+        )?;
+        let stride = bw * 8;
+        planes = rec.map(|p| {
+            (0..h)
+                .flat_map(|y| p[y * stride..y * stride + w].to_vec())
+                .collect()
+        });
+        if fh.epf_iters > 0 {
+            sigma = vec![0f32; bw * bh];
+            for g in &lf_groups {
+                g.copy_sigma(&mut sigma, bw);
+            }
         }
-        planes.push(c.data);
+    } else {
+        if full.channels.len() < n_color {
+            return Err(invalid("modular image lost its colour channels"));
+        }
+        for c in &full.channels[..n_color] {
+            if c.w != w || c.h != h {
+                return Err(invalid("colour channel has the wrong size"));
+            }
+        }
+        let filtered = fh.gaborish || fh.epf_iters > 0;
+        if ih.xyb_encoded {
+            // Channels are Y, X, B - Y; scaled by the LF dequant weights.
+            let [y, x, b] = [
+                &full.channels[0].data,
+                &full.channels[1].data,
+                &full.channels[2].data,
+            ];
+            let (mx, my, mb) = (m_lf[0] / 128.0, m_lf[1] / 128.0, m_lf[2] / 128.0);
+            planes = [
+                x.iter().map(|&v| v as f32 * mx).collect(),
+                y.iter().map(|&v| v as f32 * my).collect(),
+                b.iter()
+                    .zip(y)
+                    .map(|(&b, &y)| b.saturating_add(y) as f32 * mb)
+                    .collect(),
+            ];
+        } else if filtered {
+            let max = ((1u64 << ih.bit_depth.bits) - 1) as f32;
+            let norm = |c: usize| -> Vec<f32> {
+                full.channels[c]
+                    .data
+                    .iter()
+                    .map(|&v| v as f32 / max)
+                    .collect()
+            };
+            planes = if n_color == 1 {
+                let p = norm(0);
+                [p.clone(), p.clone(), p]
+            } else {
+                [norm(0), norm(1), norm(2)]
+            };
+        } else {
+            return Ok(FrameOut::Int(
+                full.channels
+                    .into_iter()
+                    .take(n_color)
+                    .map(|c| c.data)
+                    .collect(),
+            ));
+        }
+        if fh.epf_iters > 0 {
+            sigma = vec![fh.epf.sigma_for_modular; bw * bh];
+        }
     }
-    Ok(planes)
+    if fh.gaborish {
+        render::gaborish(&mut planes, w, h, fh.gab_weights);
+    }
+    if fh.epf_iters > 0 {
+        render::epf(&mut planes, w, h, &sigma, bw, fh);
+    }
+    if ih.xyb_encoded {
+        render::xyb_to_linear(&mut planes, &ih.opsin, ih.intensity_target);
+        Ok(FrameOut::Linear(planes))
+    } else {
+        Ok(FrameOut::Normalised(planes))
+    }
 }
 
 /// Inclusive downsampling shift bracket of a pass (GetDownsamplingBracket).
@@ -427,19 +600,48 @@ fn to_image(ih: &ImageHeader, canvas: Canvas) -> Result<Image> {
     let bits = ih.bit_depth.bits;
     let max = ((1u64 << bits) - 1) as i64;
     let nc = info.components as usize;
-    let (w, h) = (canvas.width, canvas.height);
-    let planes: Vec<&Vec<i32>> = if canvas.planes.len() == 1 && nc == 3 {
-        vec![&canvas.planes[0]; 3]
-    } else {
-        canvas.planes.iter().take(nc).collect()
-    };
+    let n = canvas.width * canvas.height;
     if ih.orientation != 1 {
         return Err(Error::unsupported(CODEC, "image orientation"));
     }
-    let mut out = Vec::with_capacity(w * h * nc);
-    for i in 0..w * h {
-        for p in &planes {
-            out.push((p[i] as i64).clamp(0, max) as u16);
+    let mut out = vec![0u16; n * nc];
+    match canvas.frame {
+        FrameOut::Int(planes) => {
+            for (k, o) in out.iter_mut().enumerate() {
+                let (i, ch) = (k / nc, k % nc);
+                let p = &planes[ch.min(planes.len() - 1)];
+                *o = (p[i] as i64).clamp(0, max) as u16;
+            }
+        }
+        FrameOut::Normalised(planes) => {
+            for i in 0..n {
+                for c in 0..nc {
+                    out[i * nc + c] =
+                        (planes[c][i] * max as f32).round().clamp(0.0, max as f32) as u16;
+                }
+            }
+        }
+        FrameOut::Linear(planes) => {
+            let tf = match ih.color.transfer {
+                Some(13) => render::Transfer::Srgb,
+                Some(8) => render::Transfer::Linear,
+                Some(1) => render::Transfer::Bt709,
+                Some(17) => render::Transfer::Dci,
+                None => render::Transfer::Gamma(ih.color.gamma as f32 * 1e-7),
+                Some(_) => {
+                    return Err(Error::unsupported(CODEC, "PQ / HLG transfer functions"));
+                }
+            };
+            for i in 0..n {
+                if nc == 1 {
+                    let yl = 0.2126 * planes[0][i] + 0.7152 * planes[1][i] + 0.0722 * planes[2][i];
+                    out[i] = (tf.encode(yl) * max as f32).round() as u16;
+                } else {
+                    for c in 0..nc {
+                        out[i * nc + c] = (tf.encode(planes[c][i]) * max as f32).round() as u16;
+                    }
+                }
+            }
         }
     }
     let samples = if bits <= 8 {
@@ -471,3 +673,4 @@ pub fn encode(ts: TransferSyntax, image: &Image, opts: &EncodeOptions) -> Result
         ))),
     }
 }
+

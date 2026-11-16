@@ -667,7 +667,7 @@ impl Histograms {
     }
 }
 
-fn decode_context_map(br: &mut BitReader, num_contexts: usize) -> Result<Vec<u8>> {
+pub(crate) fn decode_context_map(br: &mut BitReader, num_contexts: usize) -> Result<Vec<u8>> {
     if num_contexts == 1 {
         return Ok(vec![0]);
     }

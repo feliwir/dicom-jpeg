@@ -16,12 +16,50 @@ pub(crate) const FLAG_NOISE: u64 = 0x1;
 pub(crate) const FLAG_PATCHES: u64 = 0x2;
 pub(crate) const FLAG_SPLINES: u64 = 0x10;
 pub(crate) const FLAG_USE_LF_FRAME: u64 = 0x20;
+pub(crate) const FLAG_SKIP_ADAPTIVE_LF_SMOOTHING: u64 = 0x80;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Passes {
     pub(crate) num_passes: u32,
+    /// Coefficient shift of each pass (the last pass has none).
+    pub(crate) shift: Vec<u32>,
     /// (downsample, last_pass) pairs.
     pub(crate) downsample: Vec<(u32, u32)>,
+}
+
+/// Edge-preserving filter parameters.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct EpfParams {
+    pub(crate) sharp_lut: [f32; 8],
+    pub(crate) channel_scale: [f32; 3],
+    pub(crate) quant_mul: f32,
+    pub(crate) pass0_sigma_scale: f32,
+    pub(crate) pass2_sigma_scale: f32,
+    pub(crate) border_sad_mul: f32,
+    pub(crate) sigma_for_modular: f32,
+}
+
+impl Default for EpfParams {
+    fn default() -> Self {
+        EpfParams {
+            sharp_lut: [
+                0.0,
+                1.0 / 7.0,
+                2.0 / 7.0,
+                3.0 / 7.0,
+                4.0 / 7.0,
+                5.0 / 7.0,
+                6.0 / 7.0,
+                1.0,
+            ],
+            channel_scale: [40.0, 5.0, 3.5],
+            quant_mul: 0.46,
+            pass0_sigma_scale: 0.9,
+            pass2_sigma_scale: 6.5,
+            border_sad_mul: 2.0 / 3.0,
+            sigma_for_modular: 1.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -55,7 +93,10 @@ pub(crate) struct FrameHeader {
     pub(crate) save_as_reference: u32,
     pub(crate) save_before_ct: bool,
     pub(crate) gaborish: bool,
+    /// Gaborish weights (side, diagonal) per XYB channel.
+    pub(crate) gab_weights: [[f32; 2]; 3],
     pub(crate) epf_iters: u32,
+    pub(crate) epf: EpfParams,
     /// Number of colour channels coded in the frame (1 or 3).
     pub(crate) color_channels: usize,
 }
@@ -98,6 +139,7 @@ impl FrameHeader {
             b_qm_scale: 2,
             passes: Passes {
                 num_passes: 1,
+                shift: Vec::new(),
                 downsample: Vec::new(),
             },
             lf_level: 0,
@@ -114,7 +156,9 @@ impl FrameHeader {
             save_as_reference: 0,
             save_before_ct: false,
             gaborish: true,
+            gab_weights: [[0.115_169_525, 0.061_248_592]; 3],
             epf_iters: 2,
+            epf: EpfParams::default(),
             color_channels: 3,
         };
         if !all_default {
@@ -146,13 +190,14 @@ impl FrameHeader {
             if fh.frame_type != FRAME_REFERENCE_ONLY {
                 let num_passes = br.u32([val(1), val(2), val(3), bits(3, 4)])?;
                 let mut downsample = Vec::new();
+                let mut shift = Vec::new();
                 if num_passes != 1 {
                     let num_ds = br.u32([val(0), val(1), val(2), bits(1, 3)])?;
                     if num_ds >= num_passes {
                         return Err(invalid("too many downsampled passes"));
                     }
                     for _ in 0..num_passes - 1 {
-                        br.read(2)?; // shift
+                        shift.push(br.read(2)?);
                     }
                     let ds = (0..num_ds)
                         .map(|_| br.u32([val(1), val(2), val(4), val(8)]))
@@ -167,6 +212,7 @@ impl FrameHeader {
                 }
                 fh.passes = Passes {
                     num_passes,
+                    shift,
                     downsample,
                 };
             }
@@ -221,33 +267,43 @@ impl FrameHeader {
             if !br.read_bool()? {
                 fh.gaborish = br.read_bool()?;
                 if fh.gaborish && br.read_bool()? {
-                    for _ in 0..6 {
-                        br.f16()?;
+                    for weights in &mut fh.gab_weights {
+                        for wt in weights.iter_mut() {
+                            *wt = br.f16()?;
+                        }
+                        let [w1, w2] = *weights;
+                        if (1.0 + (w1 + w2) * 4.0).abs() < 1e-8 {
+                            return Err(invalid("degenerate Gaborish weights"));
+                        }
                     }
                 }
                 fh.epf_iters = br.read(2)?;
                 if fh.epf_iters > 0 {
+                    let epf = &mut fh.epf;
                     if !fh.modular && br.read_bool()? {
-                        for _ in 0..8 {
-                            br.f16()?;
+                        for v in &mut epf.sharp_lut {
+                            *v = br.f16()?;
                         }
                     }
                     if br.read_bool()? {
-                        for _ in 0..3 {
-                            br.f16()?;
+                        for v in &mut epf.channel_scale {
+                            *v = br.f16()?;
                         }
-                        br.read(32)?;
+                        br.read(32)?; // zero-flush parameters (unused)
                     }
                     if br.read_bool()? {
                         if !fh.modular {
-                            br.f16()?;
+                            epf.quant_mul = br.f16()?;
                         }
-                        for _ in 0..3 {
-                            br.f16()?;
-                        }
+                        epf.pass0_sigma_scale = br.f16()?;
+                        epf.pass2_sigma_scale = br.f16()?;
+                        epf.border_sad_mul = br.f16()?;
                     }
                     if fh.modular {
-                        br.f16()?;
+                        epf.sigma_for_modular = br.f16()?;
+                        if epf.sigma_for_modular < 1e-8 {
+                            return Err(invalid("EPF sigma for modular too small"));
+                        }
                     }
                 }
                 read_extensions(br)?;
@@ -269,6 +325,7 @@ impl FrameHeader {
         if fh.width == 0 || fh.height == 0 {
             return Err(invalid("empty frame"));
         }
+
         Ok(fh)
     }
 
