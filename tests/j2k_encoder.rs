@@ -311,3 +311,19 @@ fn part2_lossy_quality() {
         p1.data.len()
     );
 }
+
+/// HTJ2K codestreams must announce Part 15 in Rsiz (bit 14), otherwise
+/// other decoders treat them as Part 1 codestreams.
+#[test]
+#[cfg(feature = "htj2k")]
+fn ht_sets_rsiz_part15_bit() {
+    let img = synthetic(40, 30, 1, 12, false, 7);
+    for ht in [false, true] {
+        let mut opts = EncoderOptions::default();
+        opts.high_throughput = ht;
+        let enc = encode_with(&img, &opts).unwrap();
+        // SOC, SIZ marker, Lsiz, then Rsiz.
+        let rsiz = u16::from_be_bytes([enc.data[6], enc.data[7]]);
+        assert_eq!(rsiz & 0x4000 != 0, ht, "ht={ht}: Rsiz {rsiz:#06x}");
+    }
+}

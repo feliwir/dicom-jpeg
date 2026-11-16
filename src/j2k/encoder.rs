@@ -743,7 +743,11 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
     let mut out = vec![0xFF, 0x4F];
     let mut siz_seg = Vec::new();
     // Rsiz: Part 2 with the multiple component transformation capability.
-    let rsiz: u16 = if part2.is_some() { 0x8100 } else { 0 };
+    // Bit 14 signals the HTJ2K capabilities of the CAP marker (T.814 A.2).
+    let mut rsiz: u16 = if part2.is_some() { 0x8100 } else { 0 };
+    if opts.high_throughput {
+        rsiz |= 0x4000;
+    }
     siz_seg.extend_from_slice(&rsiz.to_be_bytes());
     for v in [w, h, 0, 0, w, h, 0, 0] {
         siz_seg.extend_from_slice(&v.to_be_bytes());
