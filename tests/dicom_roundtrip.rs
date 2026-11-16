@@ -100,13 +100,19 @@ cases!(ready, "htj2k", {
 });
 
 // ---- JPEG XL (18181) -------------------------------------------------------------------
-cases!(pending, "jpeg-xl", {
+cases!(ready, "jpeg-xl", {
     jxl_lossless_ct1: "dicom/wg04/REF/CT1_UNC" => JpegXlLossless, None, Exact;
     jxl_lossless_mr2: "dicom/wg04/REF/MR2_UNC" => JpegXlLossless, None, Exact;
+    jxl_lossless_rg1: "dicom/wg04/REF/RG1_UNC" => JpegXlLossless, None, Exact;
     jxl_lossless_xa1: "dicom/wg04/REF/XA1_UNC" => JpegXlLossless, None, Exact;
     jxl_lossless_us1: "dicom/wg04/REF/US1_UNC" => JpegXlLossless, None, Exact;
+    jxl_lossless_vl1: "dicom/wg04/REF/VL1_UNC" => JpegXlLossless, None, Exact;
     jxl_lossless_emri: "dicom/pydicom/emri_small.dcm" => JpegXlLossless, None, Exact;
+    jxl_lossless_small_odd: "dicom/pydicom/SC_rgb_small_odd.dcm" => JpegXlLossless, None, Exact;
+    jxl_q100_is_lossless: "dicom/wg04/REF/US1_UNC" => JpegXl, Some(100), Exact;
+});
+
+cases!(pending, "jpeg-xl", {
     jxl_lossy_mr2: "dicom/wg04/REF/MR2_UNC" => JpegXl, Some(90), Psnr(40.0);
     jxl_lossy_us1: "dicom/wg04/REF/US1_UNC" => JpegXl, Some(90), Psnr(35.0);
-    jxl_q100_is_lossless: "dicom/wg04/REF/US1_UNC" => JpegXl, Some(100), Exact;
 });

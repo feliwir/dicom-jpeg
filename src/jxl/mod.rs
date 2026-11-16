@@ -5,6 +5,8 @@
 //! transfer syntax).
 
 mod bits;
+#[cfg(feature = "encode")]
+mod encode;
 mod entropy;
 mod frame;
 mod headers;
@@ -449,7 +451,23 @@ fn to_image(ih: &ImageHeader, canvas: Canvas) -> Result<Image> {
 }
 
 /// Encode an image for the given transfer syntax.
+///
+/// `JpegXlLossless`, and `JpegXl` without a quality below 100, produce a
+/// lossless modular codestream. Lossy coding and JPEG recompression are
+/// not implemented yet.
 #[cfg(feature = "encode")]
-pub fn encode(_ts: TransferSyntax, _image: &Image, _opts: &EncodeOptions) -> Result<Encoded> {
-    Err(Error::unsupported(CODEC, "encoder not implemented yet"))
+pub fn encode(ts: TransferSyntax, image: &Image, opts: &EncodeOptions) -> Result<Encoded> {
+    match ts {
+        TransferSyntax::JpegXlLossless => encode::encode_lossless(image),
+        TransferSyntax::JpegXl if matches!(opts.quality, None | Some(100..)) => {
+            encode::encode_lossless(image)
+        }
+        TransferSyntax::JpegXl => Err(Error::unsupported(CODEC, "lossy encoding")),
+        TransferSyntax::JpegXlJpegRecompression => {
+            Err(Error::unsupported(CODEC, "JPEG recompression"))
+        }
+        _ => Err(Error::input(format!(
+            "{ts} is not a JPEG XL transfer syntax"
+        ))),
+    }
 }

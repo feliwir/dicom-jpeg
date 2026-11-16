@@ -42,6 +42,7 @@ dicom-dictionary-std = "0.10.1"
 dicom-encoding = "0.10.1"
 dicom-object = "0.10.1"
 jpeg-decoder = "0.3"
+jxl-oxide = { version = "0.12", default-features = false }
 png = "0.18"
 
 [[test]]
@@ -101,3 +102,7 @@ required-features = ["jpeg2000", "encode"]
 [[test]]
 name = "jxl_conformance"
 required-features = ["jpeg-xl"]
+
+[[test]]
+name = "jxl_encoder"
+required-features = ["jpeg-xl", "encode"]
