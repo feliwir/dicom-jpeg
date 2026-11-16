@@ -1,0 +1,18 @@
+[package]
+name = "dicom-jpeg-jpegls"
+description = "ITU-T T.87 (JPEG-LS) codec of dicom-jpeg"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["encode"]
+encode = []
+
+[dependencies]
+dicom-jpeg-common.workspace = true
+
+[lints]
+workspace = true

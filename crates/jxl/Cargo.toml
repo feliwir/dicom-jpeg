@@ -1,0 +1,18 @@
+[package]
+name = "dicom-jpeg-jxl"
+description = "JPEG XL (ISO/IEC 18181) codec of dicom-jpeg"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["encode"]
+encode = []
+
+[dependencies]
+dicom-jpeg-common.workspace = true
+
+[lints]
+workspace = true

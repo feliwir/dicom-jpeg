@@ -437,10 +437,7 @@ fn main() {
         let _ = writeln!(
             report,
             "| `{rel}` | {} | {} | {col_cmp} | {} | {} |",
-            adapter
-                .transfer_syntax()
-                .uid()
-                .trim_start_matches("1.2.840.10008.1.2."),
+            adapter.uid().trim_start_matches("1.2.840.10008.1.2."),
             if frames.len() as u32 == a.frames {
                 a.frames.to_string()
             } else {

@@ -1,10 +1,18 @@
 //! T.81 encoder: parameter sweeps on synthetic images, decoded both by this
 //! crate and by the independent `jpeg-decoder` crate.
 
-use dicom_jpeg::jpeg::{ChromaSubsampling, EncoderOptions, encode_with};
+use dicom_jpeg::jpeg::{ChromaSubsampling, EncoderOptions, Process};
 use dicom_jpeg::{
-    ColorOutput, ColorSpace, DecodeOptions, Image, ImageInfo, Samples, TransferSyntax, decode,
+    Codec, ColorOutput, ColorSpace, DecodeOptions, Encoded, Image, ImageInfo, Result, Samples,
+    decode,
 };
+
+/// Encode with `opts` using the given coding process.
+fn encode_with(process: Process, image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
+    let mut o = opts.clone();
+    o.process = process;
+    dicom_jpeg::jpeg::encode_with(image, &o)
+}
 
 fn synthetic(w: u32, h: u32, nc: u16, bits: u8, seed: u32) -> Image {
     let max = (1u32 << bits) - 1;
@@ -49,9 +57,9 @@ fn values(img: &Image) -> Vec<i32> {
     }
 }
 
-fn decode_rgb(ts: TransferSyntax, data: &[u8]) -> Image {
+fn decode_rgb(data: &[u8]) -> Image {
     decode(
-        ts,
+        Codec::Jpeg,
         data,
         &DecodeOptions::new().with_color_output(ColorOutput::Rgb),
     )
@@ -70,9 +78,9 @@ fn lossless_is_exact_for_all_predictors_bits_and_sizes() {
                         let mut opts = EncoderOptions::default();
                         opts.predictor = predictor;
                         opts.restart_interval = restart;
-                        let enc = encode_with(TransferSyntax::JpegLossless, &img, &opts).unwrap();
+                        let enc = encode_with(Process::Lossless, &img, &opts).unwrap();
                         assert!(!enc.lossy);
-                        let dec = decode_rgb(TransferSyntax::JpegLossless, &enc.data);
+                        let dec = decode_rgb(&enc.data);
                         assert_eq!(
                             values(&dec),
                             values(&img),
@@ -90,9 +98,9 @@ fn lossless_point_transform_drops_low_bits() {
     let img = synthetic(20, 10, 1, 12, 3);
     let mut opts = EncoderOptions::default();
     opts.point_transform = 3;
-    let enc = encode_with(TransferSyntax::JpegLosslessSv1, &img, &opts).unwrap();
+    let enc = encode_with(Process::Lossless, &img, &opts).unwrap();
     assert!(enc.lossy);
-    let dec = decode_rgb(TransferSyntax::JpegLosslessSv1, &enc.data);
+    let dec = decode_rgb(&enc.data);
     let expected: Vec<i32> = values(&img).iter().map(|v| v & !7).collect();
     assert_eq!(values(&dec), expected);
 }
@@ -101,12 +109,7 @@ fn lossless_point_transform_drops_low_bits() {
 fn lossless_output_decodes_with_jpeg_decoder() {
     for (bits, nc) in [(8u8, 1u16), (8, 3), (12, 1), (16, 1)] {
         let img = synthetic(33, 17, nc, bits, 99);
-        let enc = encode_with(
-            TransferSyntax::JpegLosslessSv1,
-            &img,
-            &EncoderOptions::default(),
-        )
-        .unwrap();
+        let enc = encode_with(Process::Lossless, &img, &EncoderOptions::default()).unwrap();
         let mut d = jpeg_decoder::Decoder::new(&enc.data[..]);
         let out = d
             .decode()
@@ -154,8 +157,8 @@ fn lossy_quality_sweep_and_oracle() {
                         opts.quality = quality;
                         opts.subsampling = sub;
                         opts.restart_interval = restart;
-                        let enc = encode_with(TransferSyntax::JpegBaseline, &img, &opts).unwrap();
-                        let ours = values(&decode_rgb(TransferSyntax::JpegBaseline, &enc.data));
+                        let enc = encode_with(Process::Baseline, &img, &opts).unwrap();
+                        let ours = values(&decode_rgb(&enc.data));
                         let oracle: Vec<i32> = jpeg_decoder::Decoder::new(&enc.data[..])
                             .decode()
                             .unwrap()
@@ -196,8 +199,8 @@ fn twelve_bit_extended_round_trip() {
         let img = synthetic(40, 24, nc, 12, 5);
         let mut opts = EncoderOptions::default();
         opts.quality = 95;
-        let enc = encode_with(TransferSyntax::JpegExtended, &img, &opts).unwrap();
-        let dec = decode_rgb(TransferSyntax::JpegExtended, &enc.data);
+        let enc = encode_with(Process::Extended, &img, &opts).unwrap();
+        let dec = decode_rgb(&enc.data);
         assert_eq!(dec.info.bits_per_sample, 12);
         let p = psnr(&values(&dec), &values(&img), 12);
         assert!(p > 40.0, "x{nc}: PSNR {p}");
@@ -207,32 +210,10 @@ fn twelve_bit_extended_round_trip() {
 #[test]
 fn invalid_parameters_are_rejected() {
     let img12 = synthetic(8, 8, 1, 12, 1);
-    assert!(
-        encode_with(
-            TransferSyntax::JpegBaseline,
-            &img12,
-            &EncoderOptions::default()
-        )
-        .is_err()
-    );
+    assert!(encode_with(Process::Baseline, &img12, &EncoderOptions::default()).is_err());
     let img16 = synthetic(8, 8, 1, 16, 1);
-    assert!(
-        encode_with(
-            TransferSyntax::JpegExtended,
-            &img16,
-            &EncoderOptions::default()
-        )
-        .is_err()
-    );
+    assert!(encode_with(Process::Extended, &img16, &EncoderOptions::default()).is_err());
     let mut opts = EncoderOptions::default();
     opts.predictor = 0;
-    assert!(encode_with(TransferSyntax::JpegLossless, &img16, &opts).is_err());
-    assert!(
-        encode_with(
-            TransferSyntax::JpegLsLossless,
-            &img16,
-            &EncoderOptions::default()
-        )
-        .is_err()
-    );
+    assert!(encode_with(Process::Lossless, &img16, &opts).is_err());
 }

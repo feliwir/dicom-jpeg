@@ -1,10 +1,7 @@
 //! JPEG-LS encoder parameter sweeps on synthetic images.
 
 use dicom_jpeg::jpegls::{EncoderOptions, encode_with};
-use dicom_jpeg::{
-    ColorSpace, DecodeOptions, EncodeOptions, Image, ImageInfo, Samples, TransferSyntax, decode,
-    encode,
-};
+use dicom_jpeg::{Codec, ColorSpace, DecodeOptions, Image, ImageInfo, Samples, decode};
 
 fn synthetic(w: u32, h: u32, nc: u16, bits: u8, seed: u32) -> Image {
     let max = (1u32 << bits) - 1;
@@ -67,7 +64,7 @@ fn sweep_bits_near_interleave_restart_sizes() {
                             opts.restart_interval = restart;
                             let enc = encode_with(&img, &opts).unwrap();
                             assert_eq!(enc.lossy, near > 0);
-                            let dec = decode(TransferSyntax::JpegLsNearLossless, &enc.data, &DecodeOptions::new())
+                            let dec = decode(Codec::JpegLs, &enc.data, &DecodeOptions::new())
                                 .unwrap_or_else(|e| panic!("{w}x{h} {bits}b x{nc} near {near} ilv {interleave} rst {restart}: {e}"));
                             let max = values(&dec)
                                 .iter()
@@ -85,39 +82,6 @@ fn sweep_bits_near_interleave_restart_sizes() {
             }
         }
     }
-}
-
-#[test]
-fn quality_maps_to_near() {
-    let img = synthetic(32, 32, 1, 12, 1);
-    for (quality, near) in [(100u8, 0i32), (90, 1), (50, 5), (1, 10)] {
-        let opts = EncodeOptions::new().with_quality(quality);
-        let enc = encode(TransferSyntax::JpegLsNearLossless, &img, &opts).unwrap();
-        let dec = decode(
-            TransferSyntax::JpegLsNearLossless,
-            &enc.data,
-            &DecodeOptions::new(),
-        )
-        .unwrap();
-        let max = values(&dec)
-            .iter()
-            .zip(values(&img))
-            .map(|(a, b)| (a - b).abs())
-            .max()
-            .unwrap();
-        assert!(max <= near, "quality {quality}: max |err| {max} > {near}");
-    }
-    // .80 is always lossless, whatever the quality.
-    let opts = EncodeOptions::new().with_quality(10);
-    let enc = encode(TransferSyntax::JpegLsLossless, &img, &opts).unwrap();
-    assert!(!enc.lossy);
-    let dec = decode(
-        TransferSyntax::JpegLsLossless,
-        &enc.data,
-        &DecodeOptions::new(),
-    )
-    .unwrap();
-    assert_eq!(values(&dec), values(&img));
 }
 
 #[test]

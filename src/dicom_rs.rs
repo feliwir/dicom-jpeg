@@ -1,7 +1,9 @@
 //! [dicom-rs](https://github.com/Enet4/dicom-rs) integration.
 //!
 //! [`PixelAdapter`] implements `PixelDataReader` and `PixelDataWriter` from
-//! `dicom-encoding` for every transfer syntax in [`TransferSyntax`].
+//! `dicom-encoding` for the active JPEG-family transfer syntaxes (UIDs as in
+//! `dicom_dictionary_std::uids`); it maps each to a codec crate and its
+//! parameters.
 //!
 //! Notes on the dicom-rs adapter contract:
 //! * decoded 3-sample images are delivered as interleaved RGB
@@ -20,43 +22,51 @@ use std::borrow::Cow;
 
 use dicom_encoding::adapters::{DecodeError, DecodeResult, PixelDataObject, PixelDataReader};
 
-use crate::{Codec, ColorOutput, ColorSpace, DecodeOptions, Image, Limits, TransferSyntax};
+use crate::{Codec, ColorOutput, ColorSpace, DecodeOptions, Image, Limits};
 
+mod syntax;
 #[cfg(feature = "encode")]
 mod writer;
+
+use syntax::{SYNTAXES, Syntax};
 
 /// dicom-rs pixel data adapter for one transfer syntax.
 ///
 /// ```no_run
-/// use dicom_jpeg::{dicom_rs::PixelAdapter, TransferSyntax};
+/// use dicom_jpeg::dicom_rs::PixelAdapter;
+/// use dicom_dictionary_std::uids;
 /// use dicom_encoding::adapters::PixelDataReader;
 /// # fn f(obj: &dyn dicom_encoding::adapters::PixelDataObject) {
-/// let adapter = PixelAdapter::new(TransferSyntax::JpegLosslessSv1);
+/// let adapter = PixelAdapter::from_uid(uids::JPEG_LOSSLESS_SV1).unwrap();
 /// let mut pixels = Vec::new();
 /// adapter.decode_frame(obj, 0, &mut pixels).unwrap();
 /// # }
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PixelAdapter {
-    ts: TransferSyntax,
+    uid: &'static str,
+    syntax: Syntax,
     limits: Limits,
 }
 
 impl PixelAdapter {
-    /// Adapter for the given transfer syntax with default [`Limits`].
-    pub const fn new(ts: TransferSyntax) -> Self {
-        PixelAdapter {
-            ts,
+    /// Adapter for the transfer syntax identified by `uid` (trailing NUL /
+    /// space padding is ignored), with default [`Limits`]. `None` for UIDs
+    /// outside the JPEG family.
+    pub fn from_uid(uid: &str) -> Option<Self> {
+        Syntax::from_uid(uid).map(|(uid, syntax)| PixelAdapter {
+            uid,
+            syntax,
             limits: Limits {
                 max_samples: 1 << 31,
                 max_alloc_bytes: 1 << 33,
             },
-        }
+        })
     }
 
-    /// Adapter for the transfer syntax identified by `uid`.
-    pub fn from_uid(uid: &str) -> Option<Self> {
-        TransferSyntax::from_uid(uid).map(Self::new)
+    /// UIDs of all transfer syntaxes the adapter handles.
+    pub fn supported_uids() -> impl Iterator<Item = &'static str> {
+        SYNTAXES.iter().map(|(uid, _)| *uid)
     }
 
     /// Replace the resource limits.
@@ -65,9 +75,19 @@ impl PixelAdapter {
         self
     }
 
-    /// The transfer syntax handled by this adapter.
-    pub const fn transfer_syntax(&self) -> TransferSyntax {
-        self.ts
+    /// The transfer syntax UID handled by this adapter.
+    pub const fn uid(&self) -> &'static str {
+        self.uid
+    }
+
+    /// The codec used for this transfer syntax.
+    pub fn codec(&self) -> Codec {
+        self.syntax.codec()
+    }
+
+    /// Whether this transfer syntax admits lossy coding.
+    pub fn allows_lossy(&self) -> bool {
+        self.syntax.allows_lossy()
     }
 }
 
@@ -97,6 +117,7 @@ fn starts_codestream(codec: Codec, data: &[u8]) -> bool {
             data.starts_with(&[0xFF, 0x0A])
                 || data.starts_with(&[0, 0, 0, 0x0C, b'J', b'X', b'L', b' '])
         }
+        _ => false,
     }
 }
 
@@ -204,15 +225,6 @@ fn frame_layout(src: &dyn PixelDataObject) -> DecodeResult<FrameLayout> {
     })
 }
 
-/// JPEG 2000 Part 2 transfer syntaxes code all frames of an object as the
-/// components of one codestream (or one per component collection).
-fn is_part2(ts: TransferSyntax) -> bool {
-    matches!(
-        ts,
-        TransferSyntax::Jpeg2000Part2Lossless | TransferSyntax::Jpeg2000Part2
-    )
-}
-
 impl PixelAdapter {
     fn decode_options(&self, src: &dyn PixelDataObject, spp: u16) -> DecodeOptions {
         DecodeOptions::new()
@@ -238,7 +250,7 @@ impl PixelAdapter {
         let mut streams: Vec<Vec<u8>> = Vec::new();
         for i in 0..fragments as usize {
             let fragment = src.fragment(i).ok_or(DecodeError::FrameRangeOutOfBounds)?;
-            if streams.is_empty() || starts_codestream(self.ts.codec(), &fragment) {
+            if streams.is_empty() || starts_codestream(self.syntax.codec(), &fragment) {
                 streams.push(Vec::new());
             }
             streams
@@ -251,7 +263,8 @@ impl PixelAdapter {
         let mut frames = Vec::new();
         let mut pending: Vec<Image> = Vec::new();
         for data in &streams {
-            let image = crate::decode(self.ts, data, &opts).map_err(codec_decode_error)?;
+            let image =
+                crate::decode(self.syntax.codec(), data, &opts).map_err(codec_decode_error)?;
             pending.extend(split_components(&image).map_err(codec_decode_error)?);
             while pending.len() >= spp {
                 let samples: Vec<Image> = pending.drain(..spp).collect();
@@ -385,7 +398,7 @@ fn join_components(planes: &[Image], spp: u16) -> crate::Result<Image> {
 
 impl PixelDataReader for PixelAdapter {
     fn decode(&self, src: &dyn PixelDataObject, dst: &mut Vec<u8>) -> DecodeResult<()> {
-        if !is_part2(self.ts) {
+        if !self.syntax.is_part2() {
             let frames = src.number_of_frames().unwrap_or(1);
             for frame in 0..frames {
                 self.decode_frame(src, frame, dst)?;
@@ -414,7 +427,7 @@ impl PixelDataReader for PixelAdapter {
         dst: &mut Vec<u8>,
     ) -> DecodeResult<()> {
         let layout = frame_layout(src)?;
-        let image = if is_part2(self.ts) {
+        let image = if self.syntax.is_part2() {
             if frame >= src.number_of_frames().unwrap_or(1).max(1) {
                 return Err(DecodeError::FrameRangeOutOfBounds);
             }
@@ -423,9 +436,9 @@ impl PixelDataReader for PixelAdapter {
                 .nth(frame as usize)
                 .ok_or(DecodeError::FrameRangeOutOfBounds)?
         } else {
-            let data = frame_codestream(src, self.ts.codec(), frame)?;
+            let data = frame_codestream(src, self.syntax.codec(), frame)?;
             let opts = self.decode_options(src, layout.spp);
-            crate::decode(self.ts, &data, &opts).map_err(codec_decode_error)?
+            crate::decode(self.syntax.codec(), &data, &opts).map_err(codec_decode_error)?
         };
         self.finish_frame(src, &layout, image, dst)
     }

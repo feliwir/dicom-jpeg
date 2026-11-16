@@ -1,6 +1,6 @@
 #![no_main]
 
-use dicom_jpeg::{DecodeOptions, Limits, TransferSyntax, decode};
+use dicom_jpeg::{DecodeOptions, Limits, Codec, decode};
 use libfuzzer_sys::fuzz_target;
 
 // Decoding arbitrary input must never panic, hang, or allocate without bound.
@@ -9,5 +9,5 @@ fuzz_target!(|data: &[u8]| {
         max_samples: 1 << 24,
         max_alloc_bytes: 1 << 28,
     });
-    let _ = decode(TransferSyntax::JpegXl, data, &opts);
+    let _ = decode(Codec::JpegXl, data, &opts);
 });

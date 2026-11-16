@@ -3,7 +3,7 @@
 
 mod common;
 
-use dicom_jpeg::{DecodeOptions, Error, Image, Samples, TransferSyntax, decode};
+use dicom_jpeg::{Codec, DecodeOptions, Error, Image, Samples, decode};
 
 fn read(rel: &str) -> Vec<u8> {
     std::fs::read(common::testdata(rel)).unwrap()
@@ -56,11 +56,7 @@ fn values(img: &Image) -> Vec<i32> {
 }
 
 fn decode_jls(data: &[u8]) -> Result<Image, Error> {
-    decode(
-        TransferSyntax::JpegLsNearLossless,
-        data,
-        &DecodeOptions::new(),
-    )
+    decode(Codec::JpegLs, data, &DecodeOptions::new())
 }
 
 fn check(stream: &str, reference: &str, max_err: i32) {

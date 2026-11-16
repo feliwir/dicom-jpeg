@@ -5,8 +5,7 @@
 mod common;
 
 use dicom_jpeg::{
-    ColorOutput, ColorSpace, DecodeOptions, Error, Image, Samples, TransferSyntax, decode,
-    read_info,
+    Codec, ColorOutput, ColorSpace, DecodeOptions, Error, Image, Samples, decode, read_info,
 };
 
 fn read(rel: &str) -> Vec<u8> {
@@ -19,7 +18,7 @@ fn decode_jpeg(data: &[u8], rgb: bool) -> Image {
     } else {
         ColorOutput::Native
     });
-    decode(TransferSyntax::JpegExtended, data, &opts).expect("decode")
+    decode(Codec::Jpeg, data, &opts).expect("decode")
 }
 
 fn u8_samples(img: &Image) -> &[u8] {
@@ -110,7 +109,7 @@ fn progressive_is_reported_unsupported() {
     let mut data = read("conformance/t81/libjpeg-turbo/testorig.jpg");
     let sof = data.windows(2).position(|w| w == [0xFF, 0xC0]).unwrap();
     data[sof + 1] = 0xC2;
-    let err = decode(TransferSyntax::JpegExtended, &data, &DecodeOptions::new()).unwrap_err();
+    let err = decode(Codec::Jpeg, &data, &DecodeOptions::new()).unwrap_err();
     assert!(matches!(err, Error::Unsupported { .. }), "{err}");
 }
 
@@ -142,8 +141,7 @@ fn t83_streams_decode() {
             joined.extend_from_slice(&data[2..]);
             data = joined;
         }
-        let info =
-            read_info(TransferSyntax::JpegExtended, &data).unwrap_or_else(|e| panic!("{rel}: {e}"));
+        let info = read_info(Codec::Jpeg, &data).unwrap_or_else(|e| panic!("{rel}: {e}"));
         let img = decode_jpeg(&data, false);
         assert_eq!(img.info, info, "{rel}");
         eprintln!(
@@ -244,11 +242,7 @@ fn corrupted_streams_do_not_panic() {
         let data = read(rel);
         let step = (data.len() / 97).max(1);
         for cut in (0..data.len()).step_by(step) {
-            let _ = decode(
-                TransferSyntax::JpegExtended,
-                &data[..cut],
-                &DecodeOptions::new(),
-            );
+            let _ = decode(Codec::Jpeg, &data[..cut], &DecodeOptions::new());
         }
         for _ in 0..200 {
             let mut d = data.clone();
@@ -256,7 +250,7 @@ fn corrupted_streams_do_not_panic() {
                 let i = (rnd() as usize) % d.len();
                 d[i] = rnd() as u8;
             }
-            let _ = decode(TransferSyntax::JpegExtended, &d, &DecodeOptions::new());
+            let _ = decode(Codec::Jpeg, &d, &DecodeOptions::new());
         }
     }
 }

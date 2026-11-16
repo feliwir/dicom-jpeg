@@ -71,7 +71,7 @@ fn frames_extract_with_codestream_signature() {
         else {
             continue; // native reference image
         };
-        let codec = adapter.transfer_syntax().codec();
+        let codec = adapter.codec();
         let frames = common::attrs(&obj).frames;
         for f in 0..frames {
             let data = frame_codestream(&obj, codec, f)

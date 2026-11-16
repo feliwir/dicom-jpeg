@@ -18,8 +18,6 @@ use dicom_dictionary_std::tags;
 #[cfg(feature = "encode")]
 use dicom_encoding::adapters::{EncodeOptions, PixelDataWriter};
 use dicom_encoding::adapters::{PixelDataObject, PixelDataReader};
-#[cfg(feature = "encode")]
-use dicom_jpeg::TransferSyntax;
 use dicom_jpeg::dicom_rs::PixelAdapter;
 use dicom_object::{DefaultDicomObject, OpenFileOptions};
 
@@ -368,14 +366,38 @@ pub fn check_decode(rel: &str, reference: Option<&str>, expect: Expect) {
     );
 }
 
+/// DICOM keyword of a JPEG-family transfer syntax UID (for file names).
+pub fn keyword(uid: &str) -> &'static str {
+    use dicom_dictionary_std::uids::*;
+    match uid {
+        JPEG_BASELINE8_BIT => "JPEGBaseline8Bit",
+        JPEG_EXTENDED12_BIT => "JPEGExtended12Bit",
+        JPEG_LOSSLESS => "JPEGLossless",
+        JPEG_LOSSLESS_SV1 => "JPEGLosslessSV1",
+        JPEGLS_LOSSLESS => "JPEGLSLossless",
+        JPEGLS_NEAR_LOSSLESS => "JPEGLSNearLossless",
+        JPEG2000_LOSSLESS => "JPEG2000Lossless",
+        JPEG2000 => "JPEG2000",
+        JPEG2000MC_LOSSLESS => "JPEG2000MCLossless",
+        JPEG2000MC => "JPEG2000MC",
+        HTJ2K_LOSSLESS => "HTJ2KLossless",
+        HTJ2K_LOSSLESS_RPCL => "HTJ2KLosslessRPCL",
+        HTJ2K => "HTJ2K",
+        JPEGXL_LOSSLESS => "JPEGXLLossless",
+        JPEGXLJPEG_RECOMPRESSION => "JPEGXLJPEGRecompression",
+        JPEGXL => "JPEGXL",
+        _ => "unknown",
+    }
+}
+
 /// Encode the native object `reference` to `ts` through the adapter, write it
 /// as a complete DICOM file with dicom-rs, read it back, decode it through the
 /// adapter and compare with the original pixels.
 #[cfg(feature = "encode")]
-pub fn check_roundtrip(reference: &str, ts: TransferSyntax, quality: Option<u8>, expect: Expect) {
+pub fn check_roundtrip(reference: &str, ts: &str, quality: Option<u8>, expect: Expect) {
     let original = open(reference);
     let oa = attrs(&original);
-    let adapter = PixelAdapter::new(ts);
+    let adapter = PixelAdapter::from_uid(ts).expect("supported transfer syntax");
 
     let mut options = EncodeOptions::new();
     options.quality = quality;
@@ -395,7 +417,7 @@ pub fn check_roundtrip(reference: &str, ts: TransferSyntax, quality: Option<u8>,
         VR::OB,
         Value::PixelSequence(PixelFragmentSequence::new(offset_table, fragments)),
     ));
-    obj.update_meta(|meta| meta.transfer_syntax = ts.uid().to_string());
+    obj.update_meta(|meta| meta.transfer_syntax = ts.to_string());
     let mut file = Vec::new();
     obj.write_all(&mut file)
         .unwrap_or_else(|e| panic!("{reference} -> {ts}: writing DICOM failed: {e}"));
@@ -406,17 +428,16 @@ pub fn check_roundtrip(reference: &str, ts: TransferSyntax, quality: Option<u8>,
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
-        let path = dir.join("roundtrip").join(format!("{stem}__{ts:?}.dcm"));
+        let path = dir
+            .join("roundtrip")
+            .join(format!("{stem}__{}.dcm", keyword(ts)));
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, &file).unwrap();
     }
     let reread = OpenFileOptions::new()
         .from_reader(&file[..])
         .unwrap_or_else(|e| panic!("{reference} -> {ts}: re-reading DICOM failed: {e}"));
-    assert_eq!(
-        reread.meta().transfer_syntax().trim_end_matches('\0'),
-        ts.uid()
-    );
+    assert_eq!(reread.meta().transfer_syntax().trim_end_matches('\0'), ts);
 
     let decoded = decode_frames(&reread)
         .unwrap_or_else(|e| panic!("{reference} -> {ts}: decoding failed: {e}"));
@@ -437,7 +458,7 @@ pub fn check_roundtrip(reference: &str, ts: TransferSyntax, quality: Option<u8>,
         .file_stem()
         .unwrap_or_default()
         .to_string_lossy();
-    let dump_as = format!("roundtrip/{stem}__{ts:?}");
+    let dump_as = format!("roundtrip/{stem}__{}", keyword(ts));
     compare(&name, &dump_as, &decoded, &ref_frames, ra, oa, expect, near);
 }
 

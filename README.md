@@ -18,6 +18,24 @@ Other features:
 * `dicom`: dicom-rs `PixelDataReader` / `PixelDataWriter` adapters (`dicom_jpeg::dicom_rs::PixelAdapter`).
 * `parallel`: rayon parallelism.
 
+## Crates
+
+The repository is a cargo workspace. `dicom-jpeg` (the root package) is the
+facade: it re-exports the codec crates behind the features above, dispatches
+decoding by `Codec`, and contains the dicom-rs adapter, which maps transfer
+syntax UIDs (`dicom_dictionary_std::uids`) to a codec and its parameters.
+
+| Crate | Contents |
+|---|---|
+| `crates/common` (`dicom-jpeg-common`) | `Image`, options, limits, errors, `Codec`; canonical Huffman code construction and colour transforms (YCbCr / ICT, RCT) shared by the codecs |
+| `crates/jpeg` (`dicom-jpeg-jpeg`) | ITU-T T.81 |
+| `crates/jpegls` (`dicom-jpeg-jpegls`) | ITU-T T.87 |
+| `crates/j2k` (`dicom-jpeg-j2k`) | JPEG 2000 with the `htj2k` and `part2` features |
+| `crates/jxl` (`dicom-jpeg-jxl`) | JPEG XL |
+
+The codec crates know nothing about DICOM; each takes its own
+`EncoderOptions` and can be used on its own.
+
 ## Testing
 
 Test data is stored with Git LFS. Its provenance is documented in `testdata/SOURCES.md`.

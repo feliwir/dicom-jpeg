@@ -24,30 +24,22 @@ use std::path::{Path, PathBuf};
 
 use dicom_encoding::adapters::PixelDataReader;
 use dicom_jpeg::dicom_rs::PixelAdapter;
-use dicom_jpeg::{ColorOutput, DecodeOptions, Samples, TransferSyntax};
+use dicom_jpeg::{Codec, ColorOutput, DecodeOptions, Samples};
 
 type BoxResult<T> = Result<T, Box<dyn std::error::Error>>;
 
-fn sniff(data: &[u8]) -> Option<TransferSyntax> {
+fn sniff(data: &[u8]) -> Option<Codec> {
     if data.starts_with(&[0xFF, 0xD8]) {
         // JPEG-LS frames use SOF55 (FF F7); otherwise treat as T.81.
         let is_ls = data.windows(2).take(4096).any(|w| w == [0xFF, 0xF7]);
-        return Some(if is_ls {
-            TransferSyntax::JpegLsNearLossless
-        } else {
-            TransferSyntax::JpegExtended
-        });
+        return Some(if is_ls { Codec::JpegLs } else { Codec::Jpeg });
     }
     if data.starts_with(&[0xFF, 0x4F, 0xFF, 0x51]) || data.get(4..8) == Some(b"jP  ") {
         let is_ht = data.windows(2).take(4096).any(|w| w == [0xFF, 0x50]);
-        return Some(if is_ht {
-            TransferSyntax::HtJ2k
-        } else {
-            TransferSyntax::Jpeg2000
-        });
+        return Some(if is_ht { Codec::HtJ2k } else { Codec::Jpeg2000 });
     }
     if data.starts_with(&[0xFF, 0x0A]) || data.get(4..8) == Some(b"JXL ") {
-        return Some(TransferSyntax::JpegXl);
+        return Some(Codec::JpegXl);
     }
     None
 }
@@ -81,7 +73,7 @@ fn decode_dicom(input: &Path, out_dir: &Path, stem: &str, raw: bool) -> BoxResul
     eprintln!(
         "{}: {} ({cols}x{rows}, {spp} samples, {bits_stored} bits{}, {frames} frame(s))",
         input.display(),
-        adapter.transfer_syntax(),
+        adapter.uid(),
         if signed { " signed" } else { "" }
     );
     let mut written = Vec::new();
@@ -148,7 +140,7 @@ fn decode_raw(
     eprintln!(
         "{}: {} codestream ({}x{}, {} components, {} bits, {:?})",
         input.display(),
-        ts.codec(),
+        ts,
         i.width,
         i.height,
         i.components,

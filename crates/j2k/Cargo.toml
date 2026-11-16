@@ -1,0 +1,22 @@
+[package]
+name = "dicom-jpeg-j2k"
+description = "JPEG 2000 (ISO/IEC 15444-1, Part 2 multi-component transforms, HTJ2K) codec of dicom-jpeg"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["encode", "htj2k", "part2"]
+encode = []
+# ISO/IEC 15444-2 multiple component transforms
+part2 = []
+# ISO/IEC 15444-15 High-Throughput block coder
+htj2k = []
+
+[dependencies]
+dicom-jpeg-common.workspace = true
+
+[lints]
+workspace = true

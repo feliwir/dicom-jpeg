@@ -8,8 +8,8 @@ use dicom_dictionary_std::tags::{
 };
 use dicom_encoding::adapters::{EncodeError, EncodeResult, PixelDataObject, PixelDataWriter};
 
-use super::{PixelAdapter, is_part2};
-use crate::{AppliedTransform, Codec, ColorSpace, Image, TransferSyntax};
+use super::PixelAdapter;
+use crate::{AppliedTransform, Codec, ColorSpace, Image};
 
 fn custom_encode(message: impl Into<String>) -> EncodeError {
     EncodeError::Custom {
@@ -27,13 +27,14 @@ fn codec_encode_error(err: crate::Error) -> EncodeError {
 
 /// Defined terms of Lossy Image Compression Method (PS3.3 C.7.6.1.1.5.1).
 /// There is none for Part 2, whose core coding system is Part 1.
-fn lossy_method(ts: TransferSyntax) -> &'static str {
-    match ts.codec() {
+fn lossy_method(codec: Codec) -> &'static str {
+    match codec {
         Codec::Jpeg => "ISO_10918_1",
         Codec::JpegLs => "ISO_14495_1",
         Codec::Jpeg2000 => "ISO_15444_1",
         Codec::HtJ2k => "ISO_15444_15",
         Codec::JpegXl => "ISO_18181_1",
+        _ => "",
     }
 }
 
@@ -159,7 +160,7 @@ impl PixelAdapter {
             ));
             ops.push(AttributeOp::new(
                 LOSSY_IMAGE_COMPRESSION_METHOD,
-                AttributeAction::PushStr(lossy_method(self.ts).into()),
+                AttributeAction::PushStr(lossy_method(self.syntax.codec()).into()),
             ));
         }
         ops
@@ -213,20 +214,17 @@ impl PixelAdapter {
         if spp == 1 && looks_signed(&frames[0]) {
             image.info.signed = true;
         }
-        let lossy = self.ts == TransferSyntax::Jpeg2000Part2
-            && !matches!(options.quality, None | Some(100..));
+        let lossy = self.syntax.allows_lossy() && !matches!(options.quality, None | Some(100..));
         // Multi-frame colour data: transform each sample along the frames.
         let interleave = if s.frames > 1 { spp as u16 } else { 1 };
         if s.frames == 1 {
             image.info.color_space = s.info.color_space;
         }
-        let opts = EncoderOptions {
-            reversible: !lossy,
-            quality: options.quality.unwrap_or(90),
-            component_wavelet: crate::j2k::part2_uses_wavelet(&image.info)
-                .then(|| ComponentWavelet::new(None, interleave)),
-            ..EncoderOptions::default()
-        };
+        let mut opts = EncoderOptions::default();
+        opts.reversible = !lossy;
+        opts.quality = options.quality.unwrap_or(90);
+        opts.component_wavelet = crate::j2k::part2_uses_wavelet(&image.info)
+            .then(|| ComponentWavelet::new(None, interleave));
         let encoded = crate::j2k::encode_with(&image, &opts).map_err(codec_encode_error)?;
         let ops = self.attribute_ops(&s, &encoded, raw_len);
         dst.push(encoded.data);
@@ -263,7 +261,7 @@ impl PixelDataWriter for PixelAdapter {
         offset_table: &mut Vec<u32>,
     ) -> EncodeResult<Vec<AttributeOp>> {
         #[cfg(feature = "jpeg2000-part2")]
-        if is_part2(self.ts) {
+        if self.syntax.is_part2() {
             // One codestream for all frames: no per-frame offsets.
             return self.encode_part2(src, options, dst);
         }
@@ -297,7 +295,7 @@ impl PixelDataWriter for PixelAdapter {
         dst: &mut Vec<u8>,
     ) -> EncodeResult<Vec<AttributeOp>> {
         let s = source(src)?;
-        if is_part2(self.ts) && s.frames > 1 {
+        if self.syntax.is_part2() && s.frames > 1 {
             return Err(custom_encode(
                 "JPEG 2000 Part 2 codes all frames in one codestream; use encode()",
             ));
@@ -307,13 +305,14 @@ impl PixelDataWriter for PixelAdapter {
         // signals signedness in the codestream and lossy coding needs it (a
         // two's complement image read as unsigned has huge artificial edges),
         // so infer it from the data.
-        if matches!(self.ts.codec(), Codec::Jpeg2000 | Codec::HtJ2k) && looks_signed(&image) {
+        if matches!(self.syntax.codec(), Codec::Jpeg2000 | Codec::HtJ2k) && looks_signed(&image) {
             image.info.signed = true;
         }
         let mut opts = crate::EncodeOptions::new();
         opts.quality = options.quality;
         opts.effort = options.effort;
-        let encoded = crate::encode(self.ts, &image, &opts).map_err(codec_encode_error)?;
+        let encoded =
+            super::syntax::encode(self.syntax, &image, &opts).map_err(codec_encode_error)?;
         dst.extend_from_slice(&encoded.data);
         Ok(self.attribute_ops(&s, &encoded, raw_len))
     }

@@ -29,6 +29,17 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 [[package]]
 name = "dicom-jpeg"
 version = "0.1.0"
+dependencies = [
+ "dicom-jpeg-common",
+ "dicom-jpeg-j2k",
+ "dicom-jpeg-jpeg",
+ "dicom-jpeg-jpegls",
+ "dicom-jpeg-jxl",
+]
+
+[[package]]
+name = "dicom-jpeg-common"
+version = "0.1.0"
 
 [[package]]
 name = "dicom-jpeg-fuzz"
@@ -36,6 +47,34 @@ version = "0.0.0"
 dependencies = [
  "dicom-jpeg",
  "libfuzzer-sys",
+]
+
+[[package]]
+name = "dicom-jpeg-j2k"
+version = "0.1.0"
+dependencies = [
+ "dicom-jpeg-common",
+]
+
+[[package]]
+name = "dicom-jpeg-jpeg"
+version = "0.1.0"
+dependencies = [
+ "dicom-jpeg-common",
+]
+
+[[package]]
+name = "dicom-jpeg-jpegls"
+version = "0.1.0"
+dependencies = [
+ "dicom-jpeg-common",
+]
+
+[[package]]
+name = "dicom-jpeg-jxl"
+version = "0.1.0"
+dependencies = [
+ "dicom-jpeg-common",
 ]
 
 [[package]]

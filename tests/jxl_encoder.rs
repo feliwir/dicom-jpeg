@@ -1,9 +1,7 @@
 //! Lossless JPEG XL encoder: round trips through our decoder and
 //! cross-decoding with jxl-oxide.
 
-use dicom_jpeg::{
-    ColorSpace, DecodeOptions, EncodeOptions, Image, ImageInfo, Samples, TransferSyntax,
-};
+use dicom_jpeg::{ColorSpace, DecodeOptions, Image, ImageInfo, Samples};
 
 fn synthetic(w: u32, h: u32, nc: u16, bits: u8, seed: u32) -> Image {
     let max = (1u32 << bits) - 1;
@@ -59,7 +57,6 @@ fn oxide_decode(data: &[u8], bits: u8) -> Vec<u32> {
 
 #[test]
 fn lossless_sweep() {
-    let opts = EncodeOptions::new();
     for &(w, h) in &[
         (1u32, 1u32),
         (7, 3),
@@ -78,7 +75,7 @@ fn lossless_sweep() {
             (3, 16),
         ] {
             let img = synthetic(w, h, nc, bits, w * 31 + h);
-            let enc = dicom_jpeg::jxl::encode(TransferSyntax::JpegXlLossless, &img, &opts)
+            let enc = dicom_jpeg::jxl::encode_lossless(&img)
                 .unwrap_or_else(|e| panic!("{w}x{h} x{nc} {bits}b: {e}"));
             assert!(!enc.lossy);
             let dec = dicom_jpeg::jxl::decode(&enc.data, &DecodeOptions::default())

@@ -1,0 +1,117 @@
+//! Huffman tables (T.81 Annex C) with a lookup-table fast path for decoding.
+
+use super::bitreader::BitReader;
+use dicom_jpeg_common::{Error, Result};
+
+use super::CODEC;
+
+const LOOKAHEAD: u32 = 9;
+
+/// A decoding table built from a DHT specification.
+#[derive(Debug, Clone)]
+pub(crate) struct HuffmanTable {
+    /// `lookup[peek9] = (length << 8) | value`, length 0 = not in fast path.
+    lookup: Box<[u16; 1 << LOOKAHEAD]>,
+    /// Largest code of each length (index 1..=16), -1 if none; `maxcode[17]` sentinel.
+    maxcode: [i32; 18],
+    /// `values` index offset for each length.
+    valoffset: [i32; 17],
+    values: Vec<u8>,
+}
+
+impl HuffmanTable {
+    /// Build from the 16 code-length counts and the symbol values.
+    pub(crate) fn new(counts: &[u8; 16], values: &[u8]) -> Result<Self> {
+        let total: usize = counts.iter().map(|&c| c as usize).sum();
+        if total != values.len() || total > 256 {
+            return Err(Error::invalid(CODEC, "inconsistent Huffman table"));
+        }
+        // C.2: generate code sizes and codes.
+        let mut maxcode = [-1i32; 18];
+        let mut valoffset = [0i32; 17];
+        let mut lookup = Box::new([0u16; 1 << LOOKAHEAD]);
+        let mut code: u32 = 0;
+        let mut k = 0usize;
+        for len in 1..=16u32 {
+            let n = counts[len as usize - 1] as usize;
+            if n > 0 {
+                valoffset[len as usize] = k as i32 - code as i32;
+                for _ in 0..n {
+                    if code >= (1 << len) {
+                        return Err(Error::invalid(CODEC, "Huffman code lengths overflow"));
+                    }
+                    if len <= LOOKAHEAD {
+                        let shift = LOOKAHEAD - len;
+                        let base = (code << shift) as usize;
+                        for slot in &mut lookup[base..base + (1 << shift)] {
+                            *slot = ((len as u16) << 8) | values[k] as u16;
+                        }
+                    }
+                    code += 1;
+                    k += 1;
+                }
+                maxcode[len as usize] = code as i32 - 1;
+            }
+            code <<= 1;
+        }
+        maxcode[17] = i32::MAX;
+        Ok(HuffmanTable {
+            lookup,
+            maxcode,
+            valoffset,
+            values: values.to_vec(),
+        })
+    }
+
+    /// Decode one symbol.
+    #[inline]
+    pub(crate) fn decode(&self, reader: &mut BitReader<'_>) -> Result<u8> {
+        let peek = reader.peek16();
+        let entry = self.lookup[(peek >> (16 - LOOKAHEAD)) as usize];
+        if entry != 0 {
+            reader.consume((entry >> 8) as u32);
+            return Ok(entry as u8);
+        }
+        // Slow path: F.2.2.3 DECODE.
+        let mut len = LOOKAHEAD + 1;
+        while len <= 16 {
+            let code = (peek >> (16 - len)) as i32;
+            if code <= self.maxcode[len as usize] {
+                reader.consume(len);
+                let idx = (self.valoffset[len as usize] + code) as usize;
+                return self
+                    .values
+                    .get(idx)
+                    .copied()
+                    .ok_or_else(|| Error::invalid(CODEC, "invalid Huffman code"));
+            }
+            len += 1;
+        }
+        Err(Error::invalid(CODEC, "invalid Huffman code"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_standard_dc_table() {
+        // Table K.3 (luminance DC)
+        let counts = [0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0];
+        let values = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+        let t = HuffmanTable::new(&counts, &values).unwrap();
+        // codes: 0:00 1:010 2:011 ... 11:111111110 (9 bits)
+        let data = [0b0001_0011, 0b1111_1111, 0b0000_0000];
+        let mut r = BitReader::new(&data, 0);
+        assert_eq!(t.decode(&mut r).unwrap(), 0);
+        assert_eq!(t.decode(&mut r).unwrap(), 1);
+        assert_eq!(t.decode(&mut r).unwrap(), 2);
+    }
+
+    #[test]
+    fn rejects_overfull_table() {
+        let counts = [3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        assert!(HuffmanTable::new(&counts, &[0, 1, 2]).is_err());
+    }
+}
