@@ -28,7 +28,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-hack
       - uses: Swatinem/rust-cache@v2
-      - run: cargo hack check --all-targets --each-feature --no-dev-deps
+      - run: cargo hack check --each-feature --no-dev-deps
       - run: cargo hack check --all-targets --feature-powerset --depth 2 --exclude-features parallel
 
   test:
@@ -70,8 +70,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: fuzz
+      # The prebuilt cargo-fuzz is a musl binary and would default to its own
+      # target triple, which neither supports sanitizers nor is installed.
       - name: Fuzz each decoder for 60 s
         run: |
           for target in $(cargo fuzz list); do
-            cargo fuzz run "$target" -- -max_total_time=60 -rss_limit_mb=2048
+            cargo fuzz run --target x86_64-unknown-linux-gnu "$target" -- -max_total_time=60 -rss_limit_mb=2048
           done
