@@ -1,0 +1,79 @@
+# Benchmarks
+
+Criterion benchmarks that compare dicom-jpeg with reference implementations
+that have Rust bindings. They run single-threaded on the NEMA WG04 DICOM
+test set from `testdata/`, so run `git lfs pull` first.
+
+```sh
+cargo bench -p dicom-jpeg-benchmarks                    # everything
+cargo bench -p dicom-jpeg-benchmarks --bench j2k        # one codec
+cargo bench -p dicom-jpeg-benchmarks --bench jpeg -- JPLL  # filter groups
+```
+
+Criterion writes an HTML report to `target/criterion/report/index.html`,
+with one page per group (violin plot of all implementations) and per
+benchmark.
+
+The C and C++ references are built from source by their `-sys` crates. That
+needs cmake, a C++ compiler and nasm (for libjpeg-turbo's SIMD).
+
+## Method
+
+- **What one iteration covers:** a whole input set, such as every frame of
+  WG04 J2KR. Throughput is in pixels (`elem/s` = pixels/s).
+- **Image size:** only WG04 images of at most 1 Mpixel are used
+  (`MAX_FRAME_PIXELS`). This leaves out MG1, the RG radiographs, SC1 and
+  VL4/VL5, and keeps each set at about 5 Mpixel, so the whole suite runs in
+  about 3 minutes.
+- **Sampling:** 10 flat samples (Criterion's minimum) in a 1 s window, after
+  a 0.1 s warm-up.
+- **Same inputs for everyone:**
+  - Inputs dicom-jpeg rejects are dropped.
+  - If a reference fails on more than half of the inputs, it is treated as
+    lacking that feature and skipped.
+  - Otherwise, the inputs it fails on are dropped for every implementation.
+  - Each case is reported on stderr.
+- **Encoders:** every encoder gets the same settings, and its compression
+  ratio is printed on stderr. Lossy JPEG 2000 references are given, per
+  image, the byte budget that dicom-jpeg reaches at its default quality.
+- **Threads:** all implementations run single-threaded:
+  - jxl-oxide, openjp2, jpeg-decoder and zune-jpegxl are built without their
+    threading features;
+  - OpenJPEG is set to 0 threads;
+  - libjxl gets no parallel runner.
+- **Colour:** colour JPEG output is converted to RGB by every decoder,
+  including dicom-jpeg.
+
+## Implementations
+
+| Codec | Reference | Binding | Coverage |
+|---|---|---|---|
+| JPEG | libjpeg-turbo 3.1 | `turbojpeg` (+ raw `tj3*12/16`) | 8/12-bit DCT, lossless 2–16 bit |
+| | zune-jpeg | pure Rust | 8-bit DCT |
+| | jpeg-decoder | pure Rust | 8-bit DCT, lossless |
+| JPEG-LS | CharLS 2.4 | `charls` | all |
+| JPEG 2000 | OpenJPEG 2.5 (C) | `openjpeg-sys` | Part 1 decode and encode, HTJ2K decode |
+| | openjp2 | pure-Rust port of OpenJPEG | as OpenJPEG |
+| | hayro-jpeg2000 | pure Rust | Part 1 decode |
+| JPEG XL | libjxl 0.12 | `jpegxl-rs` (vendored) | all |
+| | jxl-oxide | pure Rust | decode |
+| | jxl-rs | pure Rust (`jxl` crate) | decode |
+| | zune-jpegxl | pure Rust | lossless encode (simple) |
+
+The following are not included because they have no Rust bindings: IJG
+libjpeg, OpenJPH, Grok, Kakadu. As a result, the HTJ2K decoders are fed
+dicom-jpeg's own HTJ2K output plus the pydicom HTJ2K files, and the HTJ2K
+encoder has nothing to compare against.
+
+## Inputs
+
+| Group | Inputs |
+|---|---|
+| `jpeg-decode/JPLL lossless` | WG04 JPLL (process 14, 8–16 bit) |
+| `jpeg-decode/JPLY 12-bit` | WG04 JPLY (all 12-bit extended) |
+| `jpeg-decode/REF 8-bit q90` | 8-bit WG04 REF images encoded by libjpeg-turbo (q90, 4:2:2) |
+| `jpegls-decode/*` | WG04 JLSL, JLSN |
+| `j2k-decode/*` | WG04 J2KR, J2KI |
+| `htj2k-decode/REF *` | WG04 REF images encoded by dicom-jpeg (HT, lossless / lossy) |
+| `jxl-decode/*` | WG04 REF images encoded by libjxl e7 (lossless, lossy d1) and by dicom-jpeg (lossless) |
+| `*-encode/*` | WG04 REF images (gray and RGB, 8–16 bit) |

@@ -50,6 +50,18 @@ cargo test --all-features -- --ignored  # cases for codecs that are not implemen
 `crates/dicom-jpeg/tests/dicom_decode.rs` decodes every NEMA WG04, pydicom and pylibjpeg file through the dicom-rs adapter and compares it with the uncompressed reference.
 `crates/dicom-jpeg/tests/dicom_roundtrip.rs` encodes native references, writes and re-reads a DICOM file with dicom-rs, then decodes and compares the result.
 
+## Benchmarks
+
+`benchmarks/` holds Criterion benchmarks against reference implementations
+that have Rust bindings: libjpeg-turbo, zune-jpeg, jpeg-decoder, CharLS,
+OpenJPEG, openjp2, hayro-jpeg2000, libjxl, jxl-oxide, jxl-rs and zune-jpegxl.
+They are all single-threaded and run on the WG04 test set. See
+[benchmarks/README.md](benchmarks/README.md).
+
+```sh
+cargo bench -p dicom-jpeg-benchmarks
+```
+
 ## License
 
 MIT OR Apache-2.0
