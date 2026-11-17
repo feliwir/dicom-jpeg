@@ -764,10 +764,39 @@ impl LfGroup {
 // ---------------------------------------------------------------------------
 // HfGlobal
 
+/// Dequantisation multipliers of one param index, per channel.
+struct Matrices {
+    normal: [Vec<f32>; 3],
+    /// For transposed transforms.
+    transposed: [Vec<f32>; 3],
+}
+
+impl Matrices {
+    fn build(p: MatrixParams, i: usize) -> Result<Self> {
+        let normal = build_matrix(p, i)?;
+        let (w, h) = MATRIX_SIZE[i];
+        let transposed = std::array::from_fn(|c| {
+            let src = &normal[c];
+            // Transposed: width h, height w.
+            (0..w * h).map(|k| src[(k % h) * w + k / h]).collect()
+        });
+        Ok(Matrices { normal, transposed })
+    }
+
+    /// The default matrices of param index `i`, built on first use.
+    fn default(i: usize) -> &'static Matrices {
+        static CACHE: [std::sync::OnceLock<Matrices>; 17] =
+            [const { std::sync::OnceLock::new() }; 17];
+        CACHE[i].get_or_init(|| {
+            Matrices::build(default_params(i), i).expect("default matrices are valid")
+        })
+    }
+}
+
 pub(crate) struct HfGlobal {
-    /// Multipliers per param index and channel (normal and transposed).
-    matrices: Vec<[Vec<f32>; 3]>,
-    matrices_tr: Vec<[Vec<f32>; 3]>,
+    /// Signalled dequantisation matrices per param index; `None` for the
+    /// defaults.
+    custom: Option<Vec<Matrices>>,
     num_hf_presets: u32,
     passes: Vec<HfPass>,
 }
@@ -786,26 +815,19 @@ pub(crate) fn read_hf_global(
     alloc_limit: u64,
 ) -> Result<HfGlobal> {
     let num_lf = fh.num_lf_groups();
-    let params: Vec<MatrixParams> = if br.read_bool()? {
-        (0..17).map(default_params).collect()
+    let custom = if br.read_bool()? {
+        None
     } else {
-        (0..17)
-            .map(|i| read_matrix_params(br, i, 1 + 3 * num_lf + i as u32, global, alloc_limit))
-            .collect::<Result<_>>()?
+        Some(
+            (0..17)
+                .map(|i| {
+                    let p =
+                        read_matrix_params(br, i, 1 + 3 * num_lf + i as u32, global, alloc_limit)?;
+                    Matrices::build(p, i)
+                })
+                .collect::<Result<_>>()?,
+        )
     };
-    let mut matrices = Vec::with_capacity(17);
-    let mut matrices_tr = Vec::with_capacity(17);
-    for (i, p) in params.into_iter().enumerate() {
-        let m = build_matrix(p, i)?;
-        let (w, h) = MATRIX_SIZE[i];
-        let tr = std::array::from_fn(|c| {
-            let src = &m[c];
-            // Transposed: width h, height w.
-            (0..w * h).map(|k| src[(k % h) * w + k / h]).collect()
-        });
-        matrices.push(m);
-        matrices_tr.push(tr);
-    }
     let num_groups = fh.num_groups();
     let num_hf_presets = 1 + br.read(num_groups.next_power_of_two().trailing_zeros())?;
     let mut passes = Vec::with_capacity(fh.passes.num_passes as usize);
@@ -833,8 +855,7 @@ pub(crate) fn read_hf_global(
         passes.push(HfPass { orders, histograms });
     }
     Ok(HfGlobal {
-        matrices,
-        matrices_tr,
+        custom,
         num_hf_presets,
         passes,
     })
@@ -1057,77 +1078,200 @@ fn scale_f(c: usize, logb: usize) -> f32 {
     SCALE_F[c << logb]
 }
 
-/// DCT-II / DCT-III of power-of-two sizes with the JPEG XL normalisation:
-/// the forward transform averages (DC = mean), the inverse does not scale.
+/// DCT-II / DCT-III of power-of-two sizes (up to 256) with the JPEG XL
+/// normalisation: the forward transform averages (DC = mean), the inverse
+/// does not scale. Both use Lee's O(n log n) recursion, as libjxl does, on
+/// all columns of a block at once (`w` lanes), so every step is a loop over
+/// whole rows; rows are transformed as the columns of the transpose.
 struct Dct {
-    /// cos tables per log2 size: t[k * n + i] = sqrt(2) cos((2i+1) k pi / 2n), t[i] = 1 for k = 0.
-    tables: Vec<Vec<f32>>,
+    /// Per log2 size n: 1 / (2 cos((2i + 1) pi / 2n)) for i < n / 2.
+    mul: Vec<Vec<f32>>,
+    /// Scratch blocks.
+    a: Vec<f32>,
+    b: Vec<f32>,
+    tmp: Vec<f32>,
+}
+
+const MAX_DCT: usize = 256;
+
+/// Rows `i` and `j > i` of `x` (`w` wide), mutably.
+#[inline]
+fn two_rows(x: &mut [f32], w: usize, i: usize, j: usize) -> (&mut [f32], &mut [f32]) {
+    let (lo, hi) = x.split_at_mut(j * w);
+    (&mut lo[i * w..][..w], &mut hi[..w])
+}
+
+/// Column-wise y_i = sum_k x_k cos((2i + 1) k pi / 2n) of the n x w block
+/// `x`, in place; `tmp` is scratch of the same size.
+fn dct3(mul: &[Vec<f32>], x: &mut [f32], tmp: &mut [f32], n: usize, w: usize) {
+    if n == 1 {
+        return;
+    }
+    if n == 2 {
+        let (r0, r1) = x[..2 * w].split_at_mut(w);
+        for (a, b) in r0.iter_mut().zip(r1) {
+            let (p, q) = (*a, *b * std::f32::consts::FRAC_1_SQRT_2);
+            *a = p + q;
+            *b = p - q;
+        }
+        return;
+    }
+    let h = n / 2;
+    let (even, odd) = tmp[..n * w].split_at_mut(h * w);
+    for k in 0..h {
+        even[k * w..][..w].copy_from_slice(&x[2 * k * w..][..w]);
+        let o = &mut odd[k * w..][..w];
+        let cur = &x[(2 * k + 1) * w..][..w];
+        if k == 0 {
+            o.copy_from_slice(cur);
+        } else {
+            let prev = &x[(2 * k - 1) * w..][..w];
+            for ((o, &c), &p) in o.iter_mut().zip(cur).zip(prev) {
+                *o = c + p;
+            }
+        }
+    }
+    let (s0, s1) = x[..n * w].split_at_mut(h * w);
+    dct3(mul, even, s0, h, w);
+    dct3(mul, odd, s1, h, w);
+    let m = &mul[n.trailing_zeros() as usize];
+    for i in 0..h {
+        let mi = m[i];
+        let (e, o) = (&even[i * w..][..w], &odd[i * w..][..w]);
+        let (xi, xj) = two_rows(x, w, i, n - 1 - i);
+        for (((xi, xj), &e), &o) in xi.iter_mut().zip(xj).zip(e).zip(o) {
+            let o = o * mi;
+            *xi = e + o;
+            *xj = e - o;
+        }
+    }
+}
+
+/// Column-wise z_k = sum_i x_i cos((2i + 1) k pi / 2n) (the transpose of
+/// `dct3`).
+fn dct2(mul: &[Vec<f32>], x: &mut [f32], tmp: &mut [f32], n: usize, w: usize) {
+    if n == 1 {
+        return;
+    }
+    if n == 2 {
+        let (r0, r1) = x[..2 * w].split_at_mut(w);
+        for (a, b) in r0.iter_mut().zip(r1) {
+            let (p, q) = (*a, *b);
+            *a = p + q;
+            *b = (p - q) * std::f32::consts::FRAC_1_SQRT_2;
+        }
+        return;
+    }
+    let h = n / 2;
+    let m = &mul[n.trailing_zeros() as usize];
+    let (even, odd) = tmp[..n * w].split_at_mut(h * w);
+    for i in 0..h {
+        let mi = m[i];
+        let (xi, xj) = two_rows(x, w, i, n - 1 - i);
+        let (e, o) = (&mut even[i * w..][..w], &mut odd[i * w..][..w]);
+        for (((e, o), &a), &b) in e.iter_mut().zip(o).zip(&*xi).zip(&*xj) {
+            *e = a + b;
+            *o = (a - b) * mi;
+        }
+    }
+    let (s0, s1) = x[..n * w].split_at_mut(h * w);
+    dct2(mul, even, s0, h, w);
+    dct2(mul, odd, s1, h, w);
+    for k in 0..h {
+        x[2 * k * w..][..w].copy_from_slice(&even[k * w..][..w]);
+        let dst = &mut x[(2 * k + 1) * w..][..w];
+        if k + 1 < h {
+            let (cur, next) = (&odd[k * w..][..w], &odd[(k + 1) * w..][..w]);
+            for ((d, &c), &nx) in dst.iter_mut().zip(cur).zip(next) {
+                *d = c + nx;
+            }
+        } else {
+            dst.copy_from_slice(&odd[k * w..][..w]);
+        }
+    }
+}
+
+/// The JPEG XL transform along the columns of the n x w block `x`.
+fn transform_cols(
+    mul: &[Vec<f32>],
+    x: &mut [f32],
+    tmp: &mut [f32],
+    n: usize,
+    w: usize,
+    inverse: bool,
+) {
+    if n <= 1 {
+        return;
+    }
+    let sqrt2 = std::f32::consts::SQRT_2;
+    let x = &mut x[..n * w];
+    if inverse {
+        // x_i = c_0 + sum_k sqrt(2) c_k cos(...)
+        for c in &mut x[w..] {
+            *c *= sqrt2;
+        }
+        dct3(mul, x, tmp, n, w);
+    } else {
+        dct2(mul, x, tmp, n, w);
+        let inv = 1.0 / n as f32;
+        for c in &mut x[..w] {
+            *c *= inv;
+        }
+        for c in &mut x[w..] {
+            *c *= sqrt2 * inv;
+        }
+    }
+}
+
+/// `dst` (w x h) = transpose of `src` (h x w).
+fn transpose(src: &[f32], dst: &mut [f32], w: usize, h: usize) {
+    for (y, row) in src[..w * h].chunks_exact(w).enumerate() {
+        for (x, &v) in row.iter().enumerate() {
+            dst[x * h + y] = v;
+        }
+    }
 }
 
 impl Dct {
     fn new() -> Self {
-        let tables = (0..=8)
+        let mul = (0..=8)
             .map(|l| {
                 let n = 1usize << l;
-                let mut t = vec![0f32; n * n];
-                for k in 0..n {
-                    for i in 0..n {
-                        t[k * n + i] = if k == 0 {
-                            1.0
-                        } else {
-                            (std::f64::consts::SQRT_2
-                                * ((2 * i + 1) as f64 * k as f64 * std::f64::consts::PI
-                                    / (2 * n) as f64)
-                                    .cos()) as f32
-                        };
-                    }
-                }
-                t
+                (0..n / 2)
+                    .map(|i| {
+                        let a = (2 * i + 1) as f64 * std::f64::consts::PI / (2 * n) as f64;
+                        (0.5 / a.cos()) as f32
+                    })
+                    .collect()
             })
             .collect();
-        Dct { tables }
+        Dct {
+            mul,
+            a: vec![0.0; MAX_DCT * MAX_DCT],
+            b: vec![0.0; MAX_DCT * MAX_DCT],
+            tmp: vec![0.0; MAX_DCT * MAX_DCT],
+        }
     }
 
-    fn transform_1d(
-        &self,
-        data: &mut [f32],
-        stride: usize,
-        n: usize,
-        inverse: bool,
-        tmp: &mut [f32],
-    ) {
-        if n <= 1 {
-            return;
-        }
-        let t = &self.tables[n.trailing_zeros() as usize];
-        for (k, out) in tmp[..n].iter_mut().enumerate() {
-            let mut s = 0f64;
-            if inverse {
-                // x_k = sum_j c_j t[j][k]
-                for j in 0..n {
-                    s += data[j * stride] as f64 * t[j * n + k] as f64;
-                }
-            } else {
-                for i in 0..n {
-                    s += data[i * stride] as f64 * t[k * n + i] as f64;
-                }
-                s /= n as f64;
-            }
-            *out = s as f32;
-        }
-        for i in 0..n {
-            data[i * stride] = tmp[i];
-        }
+    /// The JPEG XL 1-D transform of `v` in place.
+    #[cfg(test)]
+    fn transform_1d(&mut self, v: &mut [f32], inverse: bool) {
+        transform_cols(&self.mul, v, &mut self.tmp, v.len(), 1, inverse);
     }
 
     /// 2D transform of a w x h region at `data[..]` with row stride `stride`.
-    fn transform_2d(&self, data: &mut [f32], stride: usize, w: usize, h: usize, inverse: bool) {
-        let mut tmp = vec![0f32; w.max(h)];
-        for y in 0..h {
-            self.transform_1d(&mut data[y * stride..], 1, w, inverse, &mut tmp);
+    fn transform_2d(&mut self, data: &mut [f32], stride: usize, w: usize, h: usize, inverse: bool) {
+        let (a, b) = (&mut self.a[..w * h], &mut self.b[..w * h]);
+        for (y, row) in a.chunks_exact_mut(w).enumerate() {
+            row.copy_from_slice(&data[y * stride..][..w]);
         }
-        for x in 0..w {
-            self.transform_1d(&mut data[x..], stride, h, inverse, &mut tmp);
+        // Rows first, as columns of the transpose, then the columns.
+        transpose(a, b, w, h);
+        transform_cols(&self.mul, b, &mut self.tmp, w, h, inverse);
+        transpose(b, a, h, w);
+        transform_cols(&self.mul, a, &mut self.tmp, h, w, inverse);
+        for (y, row) in a.chunks_exact(w).enumerate() {
+            data[y * stride..][..w].copy_from_slice(row);
         }
     }
 }
@@ -1166,7 +1310,7 @@ fn transform_dct2(b: &mut [f32; 64]) {
     aux_idct2(b, 8);
 }
 
-fn transform_dct4(b: &mut [f32; 64], dct: &Dct) {
+fn transform_dct4(b: &mut [f32; 64], dct: &mut Dct) {
     aux_idct2(b, 2);
     let mut scratch = [0f32; 64];
     for y in 0..2 {
@@ -1225,7 +1369,7 @@ fn transform_hornuss(b: &mut [f32; 64]) {
     }
 }
 
-fn transform_dct4x8(b: &mut [f32; 64], transposed: bool, dct: &Dct) {
+fn transform_dct4x8(b: &mut [f32; 64], transposed: bool, dct: &mut Dct) {
     let (c0, c1) = (b[at(0, 0)], b[at(0, 1)]);
     b[at(0, 0)] = c0 + c1;
     b[at(0, 1)] = c0 - c1;
@@ -1271,7 +1415,7 @@ const AFV_BASIS: [[f32; 16]; 16] = [
     [0.0, 0.0, 0.11354987314994337, -0.07417504595810355, 0.0, 0.19402893032594343, -0.435190496523228, 0.21918684838857466, 0.11354987314994257, -0.4351904965232251, 0.5550443808910661, -0.25468277124066463, -0.07417504595810233, 0.2191868483885728, -0.25468277124066413, 0.1135498731499429],
 ];
 
-fn transform_afv(b: &mut [f32; 64], n: usize, dct: &Dct) {
+fn transform_afv(b: &mut [f32; 64], n: usize, dct: &mut Dct) {
     let flip_x = n % 2;
     let flip_y = n / 2;
     let mut coeff_afv = [0f32; 16];
@@ -1400,12 +1544,14 @@ pub(crate) fn reconstruct(
         1.0,
         0.8f32.powi(fh.b_qm_scale as i32 - 2),
     ];
-    let dct = Dct::new();
+    let mut dct = Dct::new();
     let mut out: [Vec<f32>; 3] = coeffs
         .data
         .map(|d| d.into_iter().map(|v| v as f32).collect());
     let (lgx_count, _) = fh.lf_groups();
-    let mut block = vec![0f32; 256 * 256];
+    // Dequantised coefficients of the current varblock, per channel.
+    let mut deq: [Vec<f32>; 3] = std::array::from_fn(|_| vec![0f32; MAX_DCT * MAX_DCT]);
+    let mut llf = vec![0f32; 32 * 32];
     for g in lf_groups {
         for ly in 0..g.bh {
             for lx in 0..g.bw {
@@ -1423,49 +1569,57 @@ pub(crate) fn reconstruct(
                 let kb = lg.base_corr_b + g.b_from_y[tile] as f32 / lg.colour_factor as f32;
                 let mul_base = 65536.0 / (lg.global_scale as f32 * hf_mul as f32);
                 // Dequantise all three channels first (CfL needs Y).
-                let mut deq: [Vec<f32>; 3] = Default::default();
                 for c in 0..3 {
-                    let matrix = if tr {
-                        &hg.matrices_tr[param][c]
-                    } else {
-                        &hg.matrices[param][c]
+                    let m = match &hg.custom {
+                        Some(custom) => &custom[param],
+                        None => Matrices::default(param),
                     };
+                    let matrix = if tr { &m.transposed[c] } else { &m.normal[c] };
                     let mul = mul_base * qm_scale[c];
-                    let mut d = vec![0f32; pw * ph];
-                    for y in 0..ph {
-                        for x in 0..pw {
-                            let mut q = out[c][(fy + y) * stride + fx + x];
-                            if q.abs() <= 1.0 {
-                                q *= quant_bias[c];
+                    let bias = quant_bias[c];
+                    let d = &mut deq[c][..pw * ph];
+                    for ((drow, mrow), y) in d
+                        .chunks_exact_mut(pw)
+                        .zip(matrix.chunks_exact(pw))
+                        .zip(fy..)
+                    {
+                        let src = &out[c][y * stride + fx..][..pw];
+                        for ((d, &m), &q) in drow.iter_mut().zip(mrow).zip(src) {
+                            let q = if q.abs() <= 1.0 {
+                                q * bias
                             } else {
-                                q -= quant_bias_numerator / q;
-                            }
-                            d[y * pw + x] = q * matrix[y * pw + x] * mul;
+                                q - quant_bias_numerator / q
+                            };
+                            *d = q * m * mul;
                         }
                     }
-                    deq[c] = d;
                 }
-                for i in 0..pw * ph {
-                    let y = deq[1][i];
-                    deq[0][i] += kx * y;
-                    deq[2][i] += kb * y;
+                {
+                    let [d0, d1, d2] = &mut deq;
+                    for ((x, b), &y) in d0[..pw * ph]
+                        .iter_mut()
+                        .zip(&mut d2[..pw * ph])
+                        .zip(&d1[..pw * ph])
+                    {
+                        *x += kx * y;
+                        *b += kb * y;
+                    }
                 }
                 for c in 0..3 {
-                    let b = &mut block[..pw * ph];
-                    b.copy_from_slice(&deq[c]);
+                    let b = &mut deq[c][..pw * ph];
                     // LLF coefficients from the LF image.
                     let bx = g.bx0 + lx;
                     let by = g.by0 + ly;
                     if w8 == 1 && h8 == 1 {
                         b[0] = lf[c][by * bw + bx];
                     } else {
-                        let mut llf = vec![0f32; w8 * h8];
+                        let llf = &mut llf[..w8 * h8];
                         for y in 0..h8 {
                             for x in 0..w8 {
                                 llf[y * w8 + x] = lf[c][(by + y) * bw + bx + x];
                             }
                         }
-                        dct.transform_2d(&mut llf, w8, w8, h8, false);
+                        dct.transform_2d(llf, w8, w8, h8, false);
                         let (lw, lh) = (w8.trailing_zeros() as usize, h8.trailing_zeros() as usize);
                         for y in 0..h8 {
                             for x in 0..w8 {
@@ -1480,10 +1634,10 @@ pub(crate) fn reconstruct(
                         match transform {
                             HORNUSS => transform_hornuss(&mut b8),
                             DCT2 => transform_dct2(&mut b8),
-                            DCT4 => transform_dct4(&mut b8, &dct),
-                            DCT4X8 => transform_dct4x8(&mut b8, false, &dct),
-                            DCT8X4 => transform_dct4x8(&mut b8, true, &dct),
-                            t => transform_afv(&mut b8, t - AFV0, &dct),
+                            DCT4 => transform_dct4(&mut b8, &mut dct),
+                            DCT4X8 => transform_dct4x8(&mut b8, false, &mut dct),
+                            DCT8X4 => transform_dct4x8(&mut b8, true, &mut dct),
+                            t => transform_afv(&mut b8, t - AFV0, &mut dct),
                         }
                         b.copy_from_slice(&b8);
                     } else {
@@ -1499,4 +1653,64 @@ pub(crate) fn reconstruct(
     }
     let _ = lgx_count;
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The JPEG XL DCT pair evaluated directly in f64.
+    fn reference(v: &[f32], inverse: bool) -> Vec<f64> {
+        let n = v.len();
+        let t = |k: usize, i: usize| {
+            if k == 0 {
+                1.0
+            } else {
+                std::f64::consts::SQRT_2
+                    * ((2 * i + 1) as f64 * k as f64 * std::f64::consts::PI / (2 * n) as f64).cos()
+            }
+        };
+        (0..n)
+            .map(|o| {
+                if inverse {
+                    (0..n).map(|k| v[k] as f64 * t(k, o)).sum()
+                } else {
+                    (0..n).map(|i| v[i] as f64 * t(o, i)).sum::<f64>() / n as f64
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn fast_dct_matches_definition() {
+        let mut dct = Dct::new();
+        let mut seed = 1u32;
+        for l in 0..=8 {
+            let n = 1 << l;
+            let v: Vec<f32> = (0..n)
+                .map(|_| {
+                    seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+                    (seed >> 8) as f32 / (1 << 23) as f32 - 1.0
+                })
+                .collect();
+            for inverse in [false, true] {
+                let mut got = v.clone();
+                dct.transform_1d(&mut got, inverse);
+                let want = reference(&v, inverse);
+                let scale = if inverse { n as f64 } else { 1.0 };
+                for (g, w) in got.iter().zip(&want) {
+                    assert!(
+                        (*g as f64 - w).abs() < 2e-5 * scale,
+                        "n {n} inverse {inverse}"
+                    );
+                }
+            }
+            let mut rt = v.clone();
+            dct.transform_1d(&mut rt, false);
+            dct.transform_1d(&mut rt, true);
+            for (a, b) in rt.iter().zip(&v) {
+                assert!((a - b).abs() < 1e-4, "round trip n {n}");
+            }
+        }
+    }
 }
