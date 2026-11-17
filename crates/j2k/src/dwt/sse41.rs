@@ -41,6 +41,39 @@ pub(super) fn predict53(cur: &mut [i32], a: &[i32], b: &[i32]) {
 }
 
 #[target_feature(enable = "sse4.1")]
+pub(super) fn apredict53(cur: &mut [i32], a: &[i32], b: &[i32]) {
+    let n = cur.len() / L * L;
+    for i in (0..n).step_by(L) {
+        // SAFETY: as in `update53`.
+        unsafe {
+            let va = _mm_loadu_si128(a[i..i + L].as_ptr().cast());
+            let vb = _mm_loadu_si128(b[i..i + L].as_ptr().cast());
+            let c = cur[i..i + L].as_mut_ptr().cast();
+            let s = _mm_srai_epi32::<1>(_mm_add_epi32(va, vb));
+            _mm_storeu_si128(c, _mm_sub_epi32(_mm_loadu_si128(c), s));
+        }
+    }
+    super::scalar::apredict53(&mut cur[n..], &a[n..], &b[n..]);
+}
+
+#[target_feature(enable = "sse4.1")]
+pub(super) fn aupdate53(cur: &mut [i32], a: &[i32], b: &[i32]) {
+    let n = cur.len() / L * L;
+    let two = _mm_set1_epi32(2);
+    for i in (0..n).step_by(L) {
+        // SAFETY: as in `update53`.
+        unsafe {
+            let va = _mm_loadu_si128(a[i..i + L].as_ptr().cast());
+            let vb = _mm_loadu_si128(b[i..i + L].as_ptr().cast());
+            let c = cur[i..i + L].as_mut_ptr().cast();
+            let s = _mm_srai_epi32::<2>(_mm_add_epi32(_mm_add_epi32(va, vb), two));
+            _mm_storeu_si128(c, _mm_add_epi32(_mm_loadu_si128(c), s));
+        }
+    }
+    super::scalar::aupdate53(&mut cur[n..], &a[n..], &b[n..]);
+}
+
+#[target_feature(enable = "sse4.1")]
 pub(super) fn lift97(cur: &mut [f32], a: &[f32], b: &[f32], k: f32) {
     let n = cur.len() / L * L;
     let vk = _mm_set1_ps(k);

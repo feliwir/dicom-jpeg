@@ -41,6 +41,39 @@ pub(super) fn predict53(cur: &mut [i32], a: &[i32], b: &[i32]) {
 }
 
 #[target_feature(enable = "avx512f,avx512bw,avx512dq,avx512vl,avx2,fma")]
+pub(super) fn apredict53(cur: &mut [i32], a: &[i32], b: &[i32]) {
+    let n = cur.len() / L * L;
+    for i in (0..n).step_by(L) {
+        // SAFETY: as in `update53`.
+        unsafe {
+            let va = _mm512_loadu_si512(a[i..i + L].as_ptr().cast());
+            let vb = _mm512_loadu_si512(b[i..i + L].as_ptr().cast());
+            let c = cur[i..i + L].as_mut_ptr().cast();
+            let s = _mm512_srai_epi32::<1>(_mm512_add_epi32(va, vb));
+            _mm512_storeu_si512(c, _mm512_sub_epi32(_mm512_loadu_si512(c), s));
+        }
+    }
+    super::scalar::apredict53(&mut cur[n..], &a[n..], &b[n..]);
+}
+
+#[target_feature(enable = "avx512f,avx512bw,avx512dq,avx512vl,avx2,fma")]
+pub(super) fn aupdate53(cur: &mut [i32], a: &[i32], b: &[i32]) {
+    let n = cur.len() / L * L;
+    let two = _mm512_set1_epi32(2);
+    for i in (0..n).step_by(L) {
+        // SAFETY: as in `update53`.
+        unsafe {
+            let va = _mm512_loadu_si512(a[i..i + L].as_ptr().cast());
+            let vb = _mm512_loadu_si512(b[i..i + L].as_ptr().cast());
+            let c = cur[i..i + L].as_mut_ptr().cast();
+            let s = _mm512_srai_epi32::<2>(_mm512_add_epi32(_mm512_add_epi32(va, vb), two));
+            _mm512_storeu_si512(c, _mm512_add_epi32(_mm512_loadu_si512(c), s));
+        }
+    }
+    super::scalar::aupdate53(&mut cur[n..], &a[n..], &b[n..]);
+}
+
+#[target_feature(enable = "avx512f,avx512bw,avx512dq,avx512vl,avx2,fma")]
 pub(super) fn lift97(cur: &mut [f32], a: &[f32], b: &[f32], k: f32) {
     let n = cur.len() / L * L;
     let vk = _mm512_set1_ps(k);

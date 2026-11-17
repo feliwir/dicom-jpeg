@@ -13,6 +13,18 @@ pub(super) fn predict53(cur: &mut [i32], a: &[i32], b: &[i32]) {
     }
 }
 
+pub(super) fn apredict53(cur: &mut [i32], a: &[i32], b: &[i32]) {
+    for ((c, &a), &b) in cur.iter_mut().zip(a).zip(b) {
+        *c = c.wrapping_sub(a.wrapping_add(b) >> 1);
+    }
+}
+
+pub(super) fn aupdate53(cur: &mut [i32], a: &[i32], b: &[i32]) {
+    for ((c, &a), &b) in cur.iter_mut().zip(a).zip(b) {
+        *c = c.wrapping_add(a.wrapping_add(b).wrapping_add(2) >> 2);
+    }
+}
+
 pub(super) fn lift97(cur: &mut [f32], a: &[f32], b: &[f32], k: f32) {
     for ((c, &a), &b) in cur.iter_mut().zip(a).zip(b) {
         *c -= k * (a + b);

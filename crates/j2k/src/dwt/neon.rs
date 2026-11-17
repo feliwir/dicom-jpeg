@@ -46,6 +46,44 @@ pub(super) fn predict53(cur: &mut [i32], a: &[i32], b: &[i32]) {
 }
 
 #[target_feature(enable = "neon")]
+pub(super) fn apredict53(cur: &mut [i32], a: &[i32], b: &[i32]) {
+    let n = cur.len() / L * L;
+    for i in (0..n).step_by(L) {
+        // SAFETY: as in `update53`.
+        unsafe {
+            let (va, vb) = (
+                vld1q_s32(a[i..i + L].as_ptr()),
+                vld1q_s32(b[i..i + L].as_ptr()),
+            );
+            let c = cur[i..i + L].as_mut_ptr();
+            vst1q_s32(
+                c,
+                vsubq_s32(vld1q_s32(c), vshrq_n_s32::<1>(vaddq_s32(va, vb))),
+            );
+        }
+    }
+    super::scalar::apredict53(&mut cur[n..], &a[n..], &b[n..]);
+}
+
+#[target_feature(enable = "neon")]
+pub(super) fn aupdate53(cur: &mut [i32], a: &[i32], b: &[i32]) {
+    let n = cur.len() / L * L;
+    for i in (0..n).step_by(L) {
+        // SAFETY: as in `update53`.
+        unsafe {
+            let (va, vb) = (
+                vld1q_s32(a[i..i + L].as_ptr()),
+                vld1q_s32(b[i..i + L].as_ptr()),
+            );
+            let c = cur[i..i + L].as_mut_ptr();
+            let s = vshrq_n_s32::<2>(vaddq_s32(vaddq_s32(va, vb), vdupq_n_s32(2)));
+            vst1q_s32(c, vaddq_s32(vld1q_s32(c), s));
+        }
+    }
+    super::scalar::aupdate53(&mut cur[n..], &a[n..], &b[n..]);
+}
+
+#[target_feature(enable = "neon")]
 pub(super) fn lift97(cur: &mut [f32], a: &[f32], b: &[f32], k: f32) {
     let n = cur.len() / L * L;
     for i in (0..n).step_by(L) {

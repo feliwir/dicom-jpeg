@@ -139,8 +139,13 @@ pub(crate) enum Op {
     Update53,
     /// 5/3: x += (a + b) >> 1.
     Predict53,
-    /// 9/7: x -= k * (a + b).
+    /// 9/7: x -= k * (a + b) (analysis uses -k for x += k * (a + b), which
+    /// rounds identically).
     Lift97(f32),
+    /// 5/3 analysis: x -= (a + b) >> 1.
+    APredict53,
+    /// 5/3 analysis: x += (a + b + 2) >> 2.
+    AUpdate53,
 }
 
 /// Values that can go through a synthesis filter.
@@ -186,6 +191,8 @@ impl Sample for i32 {
         match op {
             Op::Update53 => dispatch!(level => update53(cur, a, b)),
             Op::Predict53 => dispatch!(level => predict53(cur, a, b)),
+            Op::APredict53 => dispatch!(level => apredict53(cur, a, b)),
+            Op::AUpdate53 => dispatch!(level => aupdate53(cur, a, b)),
             Op::Lift97(_) => unreachable!("9/7 step on integers"),
         }
     }
@@ -272,22 +279,44 @@ fn lift_seq<T: Sample>(level: Level, op: Op, cur: &mut [T], other: &[T], off: us
     }
 }
 
-/// 1-D synthesis of a line given as its low-pass (`lo`, even coordinates)
+/// A lifting program: its steps, and the operation on a line of one sample
+/// at an odd coordinate.
+struct Program<T> {
+    steps: &'static [Step],
+    single_odd: fn(&mut [T]),
+}
+
+impl<T: Sample> Program<T> {
+    fn synthesis() -> Self {
+        Program {
+            steps: T::PROGRAM,
+            single_odd: T::single_odd,
+        }
+    }
+}
+
+/// Run `prog` on a line given as its low-pass (`lo`, even coordinates)
 /// and high-pass (`hi`) samples; `odd_start`: the line starts at an odd
 /// coordinate.
-fn synth_lh<T: Sample>(level: Level, lo: &mut [T], hi: &mut [T], odd_start: bool) {
+fn lift_lh<T: Sample>(
+    level: Level,
+    prog: &Program<T>,
+    lo: &mut [T],
+    hi: &mut [T],
+    odd_start: bool,
+) {
     match lo.len() + hi.len() {
         0 => {}
         1 => {
             if odd_start {
-                T::single_odd(hi);
+                (prog.single_odd)(hi);
             }
         }
         _ => {
             // Low sample i neighbours high i - 1 + p and i + p; high
             // sample j neighbours low j - p and j + 1 - p.
             let p = odd_start as usize;
-            for step in T::PROGRAM {
+            for step in prog.steps {
                 match *step {
                     Step::Scale { low: true, k } => T::scale(level, lo, k),
                     Step::Scale { low: false, k } => T::scale(level, hi, k),
@@ -299,19 +328,26 @@ fn synth_lh<T: Sample>(level: Level, lo: &mut [T], hi: &mut [T], odd_start: bool
     }
 }
 
-/// The vertical pass: 1-D synthesis of every column of the `h` rows of
-/// width `w` in `data`, a whole row per operation.
-fn synth_columns<T: Sample>(level: Level, data: &mut [T], w: usize, h: usize, odd_start: bool) {
+/// The vertical pass: `prog` on every column of the `h` rows of width `w`
+/// in `data`, a whole row per operation.
+fn lift_columns<T: Sample>(
+    level: Level,
+    prog: &Program<T>,
+    data: &mut [T],
+    w: usize,
+    h: usize,
+    odd_start: bool,
+) {
     let p = odd_start as usize;
     // Row k holds low-pass samples if its coordinate is even.
     let is_low = |k: usize| (k + p).is_multiple_of(2);
     if h == 1 {
         if odd_start {
-            T::single_odd(data);
+            (prog.single_odd)(data);
         }
         return;
     }
-    for step in T::PROGRAM {
+    for step in prog.steps {
         match *step {
             Step::Scale { low, k } => {
                 for (r, row) in data.chunks_exact_mut(w).enumerate() {
@@ -370,6 +406,7 @@ pub(crate) fn synth_level<T: Sample>(
     (u0, v0, u1, v1): (u32, u32, u32, u32),
 ) -> Plane<T> {
     let level = simd::level();
+    let prog = Program::<T>::synthesis();
     let mut out: Plane<T> = Plane::new(u0, v0, u1, v1);
     let (w, h) = (out.w, out.h);
     if w == 0 || h == 0 {
@@ -384,7 +421,7 @@ pub(crate) fn synth_level<T: Sample>(
         let (lb, hb) = if v % 2 == 0 { (ll, hl) } else { (lh, hh) };
         band_row(lb, v / 2, lo_x0, &mut lo);
         band_row(hb, v / 2, hi_x0, &mut hi);
-        synth_lh(level, &mut lo, &mut hi, odd_u);
+        lift_lh(level, &prog, &mut lo, &mut hi, odd_u);
         let (first, second) = if odd_u { (&hi, &lo) } else { (&lo, &hi) };
         let pairs = row.as_chunks_mut::<2>().0.iter_mut();
         for (pair, (&a, &b)) in pairs.zip(first.iter().zip(second.iter())) {
@@ -395,7 +432,7 @@ pub(crate) fn synth_level<T: Sample>(
             row[w - 1] = first[w / 2];
         }
     }
-    synth_columns(level, &mut out.data, w, h, v0 % 2 == 1);
+    lift_columns(level, &prog, &mut out.data, w, h, v0 % 2 == 1);
     out
 }
 
@@ -514,13 +551,37 @@ fn analyse97(x: &mut [f32], odd_start: bool) {
 /// Values that can go through an analysis filter.
 #[cfg(feature = "encode")]
 pub(crate) trait Analyse: Sample {
+    /// 1-D analysis of an interleaved line (the reference).
     fn analyse(line: &mut [Self], odd_start: bool);
+
+    /// The analysis lifting steps of a line of at least two samples.
+    const ANALYSIS: &'static [Step];
+
+    /// Analysis of a line of one sample at an odd coordinate.
+    fn single_odd_analysis(x: &mut [Self]);
 }
 
 #[cfg(feature = "encode")]
 impl Analyse for i32 {
     fn analyse(line: &mut [Self], odd_start: bool) {
         analyse53(line, odd_start)
+    }
+
+    const ANALYSIS: &'static [Step] = &[
+        Step::Lift {
+            low: false,
+            op: Op::APredict53,
+        },
+        Step::Lift {
+            low: true,
+            op: Op::AUpdate53,
+        },
+    ];
+
+    fn single_odd_analysis(x: &mut [Self]) {
+        for v in x {
+            *v = v.wrapping_mul(2);
+        }
     }
 }
 
@@ -529,12 +590,99 @@ impl Analyse for f32 {
     fn analyse(line: &mut [Self], odd_start: bool) {
         analyse97(line, odd_start)
     }
+
+    const ANALYSIS: &'static [Step] = &[
+        Step::Lift {
+            low: false,
+            op: Op::Lift97(-ALPHA),
+        },
+        Step::Lift {
+            low: true,
+            op: Op::Lift97(-BETA),
+        },
+        Step::Lift {
+            low: false,
+            op: Op::Lift97(-GAMMA),
+        },
+        Step::Lift {
+            low: true,
+            op: Op::Lift97(-DELTA),
+        },
+        Step::Scale {
+            low: true,
+            k: 1.0 / K,
+        },
+        Step::Scale { low: false, k: K },
+    ];
+
+    fn single_odd_analysis(x: &mut [Self]) {
+        for v in x {
+            *v *= 2.0;
+        }
+    }
 }
 
 /// One 2D analysis level (F.4.2): filter columns (VER_SD) then rows
 /// (HOR_SD) of `res`, and split into (LL, HL, LH, HH) by absolute parity.
 #[cfg(feature = "encode")]
 pub(crate) fn analyse_level<T: Analyse>(res: &Plane<T>) -> [Plane<T>; 4] {
+    let level = simd::level();
+    let prog = Program {
+        steps: T::ANALYSIS,
+        single_odd: T::single_odd_analysis,
+    };
+    let (u0, v0) = (res.x0, res.y0);
+    let (u1, v1) = (u0 + res.w as u32, v0 + res.h as u32);
+    let lo = |a: u32| a.div_ceil(2);
+    let hi = |a: u32| a / 2;
+    let mut bands = [
+        Plane::new(lo(u0), lo(v0), lo(u1), lo(v1)),
+        Plane::new(hi(u0), lo(v0), hi(u1), lo(v1)),
+        Plane::new(lo(u0), hi(v0), lo(u1), hi(v1)),
+        Plane::new(hi(u0), hi(v0), hi(u1), hi(v1)),
+    ];
+    let (w, h) = (res.w, res.h);
+    if w == 0 || h == 0 {
+        return bands;
+    }
+    let mut data = res.data.clone();
+    lift_columns(level, &prog, &mut data, w, h, v0 % 2 == 1);
+    let odd_u = u0 % 2 == 1;
+    let (nl, nh) = ((lo(u1) - lo(u0)) as usize, (hi(u1) - hi(u0)) as usize);
+    let (mut l, mut hrow) = (vec![T::default(); nl], vec![T::default(); nh]);
+    let [ll, hl, lh, hh] = &mut bands;
+    for (v, row) in (v0..v1).zip(data.chunks_exact(w)) {
+        // De-interleave: even coordinates are low-pass.
+        let (first, second) = if odd_u {
+            (&mut hrow, &mut l)
+        } else {
+            (&mut l, &mut hrow)
+        };
+        for (k, &x) in row.iter().enumerate() {
+            if k % 2 == 0 {
+                first[k / 2] = x;
+            } else {
+                second[k / 2] = x;
+            }
+        }
+        lift_lh(level, &prog, &mut l, &mut hrow, odd_u);
+        let (lb, hb) = if v % 2 == 0 {
+            (&mut *ll, &mut *hl)
+        } else {
+            (&mut *lh, &mut *hh)
+        };
+        let y = (v / 2 - lb.y0) as usize;
+        lb.data[y * lb.w..(y + 1) * lb.w].copy_from_slice(&l);
+        let y = (v / 2 - hb.y0) as usize;
+        hb.data[y * hb.w..(y + 1) * hb.w].copy_from_slice(&hrow);
+    }
+    bands
+}
+
+/// The previous implementation of [`analyse_level`] (1-D reference filters
+/// per column and row).
+#[cfg(all(test, feature = "encode"))]
+fn analyse_level_reference<T: Analyse>(res: &Plane<T>) -> [Plane<T>; 4] {
     let (u0, v0) = (res.x0, res.y0);
     let (u1, v1) = (u0 + res.w as u32, v0 + res.h as u32);
     let mut data = res.data.clone();
@@ -690,6 +838,67 @@ mod synth_tests {
                     let bits = |d: &[f32]| d.iter().map(|v| v.to_bits()).collect::<Vec<_>>();
                     assert_eq!(bits(&got.data), bits(&fwant.data), "9/7 {level:?} {r:?}");
                 });
+            }
+        }
+    }
+}
+
+#[cfg(all(test, feature = "encode"))]
+mod analysis_tests {
+    use super::*;
+
+    #[test]
+    fn matches_the_reference_at_every_level() {
+        let mut seed = 7u32;
+        let mut rnd = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
+        };
+        for (x0, y0) in [(0u32, 0u32), (1, 0), (0, 1), (1, 1), (5, 2), (6, 7)] {
+            for (w, h) in [
+                (1usize, 1usize),
+                (1, 5),
+                (5, 1),
+                (2, 2),
+                (3, 3),
+                (17, 9),
+                (40, 33),
+                (64, 1),
+                (1, 64),
+            ] {
+                let mut p: Plane<i32> = Plane::new(x0, y0, x0 + w as u32, y0 + h as u32);
+                for v in &mut p.data {
+                    *v = (rnd() % 65536) as i32 - 32768;
+                }
+                let pf = Plane {
+                    x0,
+                    y0,
+                    w,
+                    h,
+                    data: p
+                        .data
+                        .iter()
+                        .map(|&v| v as f32 * 0.37)
+                        .collect::<Vec<f32>>(),
+                };
+                let want = analyse_level_reference(&p);
+                let fwant = analyse_level_reference(&pf);
+                for level in Level::supported() {
+                    simd::with_level(level, || {
+                        let got = analyse_level(&p);
+                        for (g, w) in got.iter().zip(&want) {
+                            assert_eq!(g.data, w.data, "5/3 {level:?} {x0},{y0} {w}x{h}", w = p.w);
+                        }
+                        let got = analyse_level(&pf);
+                        for (g, w) in got.iter().zip(&fwant) {
+                            let bits =
+                                |d: &[f32]| d.iter().map(|v| v.to_bits()).collect::<Vec<_>>();
+                            assert_eq!(bits(&g.data), bits(&w.data), "9/7 {level:?} {x0},{y0}");
+                        }
+                    });
+                }
             }
         }
     }
