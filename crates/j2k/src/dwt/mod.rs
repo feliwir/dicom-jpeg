@@ -143,8 +143,10 @@ pub(crate) enum Op {
     /// rounds identically).
     Lift97(f32),
     /// 5/3 analysis: x -= (a + b) >> 1.
+    #[cfg(feature = "encode")]
     APredict53,
     /// 5/3 analysis: x += (a + b + 2) >> 2.
+    #[cfg(feature = "encode")]
     AUpdate53,
 }
 
@@ -191,7 +193,9 @@ impl Sample for i32 {
         match op {
             Op::Update53 => dispatch!(level => update53(cur, a, b)),
             Op::Predict53 => dispatch!(level => predict53(cur, a, b)),
+            #[cfg(feature = "encode")]
             Op::APredict53 => dispatch!(level => apredict53(cur, a, b)),
+            #[cfg(feature = "encode")]
             Op::AUpdate53 => dispatch!(level => aupdate53(cur, a, b)),
             Op::Lift97(_) => unreachable!("9/7 step on integers"),
         }

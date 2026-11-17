@@ -45,6 +45,7 @@ pub(super) fn predict53(cur: &mut [i32], a: &[i32], b: &[i32]) {
     super::scalar::predict53(&mut cur[n..], &a[n..], &b[n..]);
 }
 
+#[cfg(feature = "encode")]
 #[target_feature(enable = "neon")]
 pub(super) fn apredict53(cur: &mut [i32], a: &[i32], b: &[i32]) {
     let n = cur.len() / L * L;
@@ -65,6 +66,7 @@ pub(super) fn apredict53(cur: &mut [i32], a: &[i32], b: &[i32]) {
     super::scalar::apredict53(&mut cur[n..], &a[n..], &b[n..]);
 }
 
+#[cfg(feature = "encode")]
 #[target_feature(enable = "neon")]
 pub(super) fn aupdate53(cur: &mut [i32], a: &[i32], b: &[i32]) {
     let n = cur.len() / L * L;
