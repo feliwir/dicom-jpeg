@@ -20,6 +20,7 @@ use criterion::{Criterion, SamplingMode, Throughput};
 use dicom_dictionary_std::tags;
 use dicom_encoding::adapters::PixelDataObject;
 use dicom_jpeg::dicom_rs::{PixelAdapter, frame_codestream};
+use dicom_jpeg::simd::{self, Level};
 use dicom_jpeg::{Codec, ColorSpace, Image, ImageInfo, Samples};
 
 /// Criterion settings shared by all benchmarks: the minimum of 10 flat
@@ -251,6 +252,35 @@ fn select(
     Selection { inputs, active }
 }
 
+/// The benchmark names and SIMD levels of implementation `k` (`name`).
+///
+/// dicom-jpeg (`k == 0`) runs once at the default level, unless
+/// `DICOM_JPEG_BENCH_LEVELS` lists levels (`all`, or e.g. `scalar,avx2`):
+/// then once per listed level the CPU supports, as `name (level)`.
+fn levels(name: &str, k: usize) -> Vec<(String, Option<Level>)> {
+    let list = std::env::var("DICOM_JPEG_BENCH_LEVELS").unwrap_or_default();
+    if k > 0 || list.trim().is_empty() {
+        return vec![(name.to_string(), None)];
+    }
+    let chosen: Vec<_> = Level::supported()
+        .filter(|l| list.trim() == "all" || list.split(',').any(|s| s.trim() == l.name()))
+        .map(|l| (format!("{name} ({})", l.name()), Some(l)))
+        .collect();
+    if chosen.is_empty() {
+        eprintln!("DICOM_JPEG_BENCH_LEVELS={list}: no supported level, using the default");
+        return vec![(name.to_string(), None)];
+    }
+    chosen
+}
+
+/// Run `f` at `level`, or at the default level for `None`.
+fn with<R>(level: Option<Level>, f: impl FnOnce() -> R) -> R {
+    match level {
+        Some(l) => simd::with_level(l, f),
+        None => f(),
+    }
+}
+
 /// Benchmark the decoders `impls` (dicom-jpeg first) on `inputs` as group
 /// `group`.
 pub fn decode_group(
@@ -277,13 +307,18 @@ pub fn decode_group(
     let mut g = c.benchmark_group(group);
     g.sampling_mode(SamplingMode::Flat);
     g.throughput(Throughput::Elements(px));
-    for ((name, f), active) in impls.iter_mut().zip(&sel.active) {
-        if active.is_some() {
-            g.bench_function(*name, |b| {
+    for (k, ((name, f), active)) in impls.iter_mut().zip(&sel.active).enumerate() {
+        if active.is_none() {
+            continue;
+        }
+        for (label, level) in levels(name, k) {
+            g.bench_function(label, |b| {
                 b.iter(|| {
-                    for i in &kept {
-                        black_box(f(black_box(&i.data)).ok());
-                    }
+                    with(level, || {
+                        for i in &kept {
+                            black_box(f(black_box(&i.data)).ok());
+                        }
+                    })
                 })
             });
         }
@@ -320,20 +355,24 @@ pub fn encode_group(
     let mut g = c.benchmark_group(group);
     g.sampling_mode(SamplingMode::Flat);
     g.throughput(Throughput::Elements(px));
-    for ((name, f), active) in impls.iter_mut().zip(&sel.active) {
+    for (k, ((name, f), active)) in impls.iter_mut().zip(&sel.active).enumerate() {
         let Some(sizes) = active else { continue };
         let size: usize = sizes.iter().sum();
         eprintln!(
             "{group}: {name} compression ratio {:.3}",
             raw as f64 / size as f64
         );
-        g.bench_function(*name, |b| {
-            b.iter(|| {
-                for img in &kept {
-                    black_box(f(black_box(img)).ok());
-                }
-            })
-        });
+        for (label, level) in levels(name, k) {
+            g.bench_function(label, |b| {
+                b.iter(|| {
+                    with(level, || {
+                        for img in &kept {
+                            black_box(f(black_box(img)).ok());
+                        }
+                    })
+                })
+            });
+        }
     }
     g.finish();
 }

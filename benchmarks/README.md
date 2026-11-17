@@ -10,6 +10,16 @@ cargo bench -p dicom-jpeg-benchmarks --bench j2k        # one codec
 cargo bench -p dicom-jpeg-benchmarks --bench jpeg -- JPLL  # filter groups
 ```
 
+dicom-jpeg runs at the best SIMD level the CPU supports. To compare its
+levels side by side, list them in `DICOM_JPEG_BENCH_LEVELS` (`all`, or e.g.
+`scalar,avx2`); each one is then benchmarked as `dicom-jpeg (level)`:
+
+```sh
+DICOM_JPEG_BENCH_LEVELS=all cargo bench -p dicom-jpeg-benchmarks --bench jpeg
+```
+
+`DICOM_JPEG_SIMD=<level>` instead lowers the level for the whole run.
+
 Criterion writes an HTML report to `target/criterion/report/index.html`,
 with one page per group (violin plot of all implementations) and per
 benchmark.
