@@ -90,6 +90,19 @@ They are all single-threaded and run on the WG04 test set. See
 cargo bench -p dicom-jpeg-benchmarks
 ```
 
+Results on an AMD Ryzen 9 9950X3D, single-threaded, with dicom-jpeg at its
+best SIMD level (AVX-512). Within each benchmark, bars are scaled to the
+fastest implementation. The numbers are listed in
+[benchmarks/results/README.md](benchmarks/results/README.md), together with
+the speed-ups of the [SIMD kernels](benchmarks/results/kernels.svg) over
+scalar code.
+
+![JPEG benchmarks](benchmarks/results/jpeg.svg)
+![JPEG-LS benchmarks](benchmarks/results/jpegls.svg)
+![JPEG 2000 benchmarks](benchmarks/results/j2k.svg)
+![HTJ2K benchmarks](benchmarks/results/htj2k.svg)
+![JPEG XL benchmarks](benchmarks/results/jxl.svg)
+
 ## License
 
 MIT OR Apache-2.0

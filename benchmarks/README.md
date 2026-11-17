@@ -36,6 +36,21 @@ benchmark.
 The C and C++ references are built from source by their `-sys` crates. That
 needs cmake, a C++ compiler and nasm (for libjpeg-turbo's SIMD).
 
+## Charts
+
+`plot.py` turns the latest Criterion results into the SVG charts and tables in
+[results/](results/README.md): one chart per codec, plus one for the SIMD
+kernels. It needs only Python 3. Pass the benches' stderr with `--log` to
+label encoders with their compression ratio:
+
+```sh
+cargo bench -p dicom-jpeg-benchmarks 2> bench.log
+python3 benchmarks/plot.py --log bench.log
+```
+
+The charts adapt to light and dark mode. Regenerate them after a full run, so
+that every group comes from the same build and machine.
+
 ## Method
 
 - **What one iteration covers:** a whole input set, such as every frame of
