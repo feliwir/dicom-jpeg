@@ -12,10 +12,10 @@ use dicom_jpeg_common::{Error, Result};
 /// Sub-band orientation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Orient {
-    LL,
-    HL,
-    LH,
-    HH,
+    LL = 0,
+    HL = 1,
+    LH = 2,
+    HH = 3,
 }
 
 /// Code-block style flags (Table A.19).
@@ -51,9 +51,13 @@ pub(crate) const NEG_S: u16 = 1 << 11;
 const BELOW: u16 = N_S | N_SW | N_SE | NEG_S;
 
 /// Zero-coding context (Table D.1).
-pub(crate) fn zc_context(orient: Orient, h: u32, v: u32, d: u32) -> usize {
-    let (h, v) = if orient == Orient::HL { (v, h) } else { (h, v) };
-    if orient == Orient::HH {
+pub(crate) const fn zc_context(orient: Orient, h: u32, v: u32, d: u32) -> usize {
+    let (h, v) = if matches!(orient, Orient::HL) {
+        (v, h)
+    } else {
+        (h, v)
+    };
+    if matches!(orient, Orient::HH) {
         let hv = h + v;
         return match (d, hv) {
             (3.., _) => 8,
@@ -81,7 +85,7 @@ pub(crate) fn zc_context(orient: Orient, h: u32, v: u32, d: u32) -> usize {
 }
 
 /// Sign-coding context and XOR bit (Table D.3) from clamped contributions.
-pub(crate) fn sc_context(h: i32, v: i32) -> (usize, u32) {
+pub(crate) const fn sc_context(h: i32, v: i32) -> (usize, u32) {
     match (h, v) {
         (1, 1) => (13, 0),
         (1, 0) => (12, 0),
@@ -93,6 +97,85 @@ pub(crate) fn sc_context(h: i32, v: i32) -> (usize, u32) {
         (-1, 0) => (12, 1),
         _ => (13, 1),
     }
+}
+
+/// Zero-coding contexts per orientation (`Orient as usize`), indexed by the
+/// 8 neighbour significance bits of a neighbourhood word.
+static ZC_LUT: [[u8; 256]; 4] = [
+    zc_lut(Orient::LL),
+    zc_lut(Orient::HL),
+    zc_lut(Orient::LH),
+    zc_lut(Orient::HH),
+];
+
+const fn zc_lut(orient: Orient) -> [u8; 256] {
+    let mut t = [0u8; 256];
+    let mut i = 0;
+    while i < 256 {
+        let w = i as u16;
+        let h = (w & (N_W | N_E)).count_ones();
+        let v = (w & (N_N | N_S)).count_ones();
+        let d = (w & (N_NW | N_NE | N_SW | N_SE)).count_ones();
+        t[i] = zc_context(orient, h, v, d) as u8;
+        i += 1;
+    }
+    t
+}
+
+/// Sign-coding context (low 7 bits) and XOR bit (bit 7), indexed by the
+/// significance (bits 0..4) and sign (bits 4..8) of the W, E, N, S
+/// neighbours: [`sc_index`].
+static SC_LUT: [u8; 256] = sc_lut();
+
+const fn sc_lut() -> [u8; 256] {
+    /// -1, 0 or 1: the contribution of a neighbour (significance bit `sig`,
+    /// sign bit `neg` of index `i`).
+    const fn contrib(i: usize, sig: usize, neg: usize) -> i32 {
+        if i & sig == 0 {
+            0
+        } else if i & neg != 0 {
+            -1
+        } else {
+            1
+        }
+    }
+    const fn clamp1(x: i32) -> i32 {
+        if x < -1 {
+            -1
+        } else if x > 1 {
+            1
+        } else {
+            x
+        }
+    }
+    let mut t = [0u8; 256];
+    let mut i = 0;
+    while i < 256 {
+        let h = clamp1(contrib(i, 1, 16) + contrib(i, 2, 32));
+        let v = clamp1(contrib(i, 4, 64) + contrib(i, 8, 128));
+        let (cx, xor) = sc_context(h, v);
+        t[i] = cx as u8 | (xor as u8) << 7;
+        i += 1;
+    }
+    t
+}
+
+/// The [`SC_LUT`] index of a neighbourhood word.
+#[inline]
+fn sc_index(w: u16) -> usize {
+    ((w & 0xF) | ((w >> 4) & 0xF0)) as usize
+}
+
+/// Buffers reused across the code-blocks decoded on a thread.
+#[derive(Default)]
+struct Scratch {
+    flags: Vec<u8>,
+    nb: Vec<u16>,
+    mag: Vec<i32>,
+}
+
+thread_local! {
+    static SCRATCH: std::cell::Cell<Scratch> = std::cell::Cell::new(Scratch::default());
 }
 
 enum Coder<'a> {
@@ -136,14 +219,10 @@ impl Block<'_> {
         if self.exclude_below(y) { w & !BELOW } else { w }
     }
 
+    /// Zero-coding context of (x, y).
     #[inline]
-    fn neighbours(&self, x: usize, y: usize) -> (u32, u32, u32) {
-        let w = self.nbw(x, y);
-        (
-            (w & (N_W | N_E)).count_ones(),
-            (w & (N_N | N_S)).count_ones(),
-            (w & (N_NW | N_NE | N_SW | N_SE)).count_ones(),
-        )
+    fn zc(&self, x: usize, y: usize) -> usize {
+        ZC_LUT[self.orient as usize][(self.nbw(x, y) & 0xFF) as usize] as usize
     }
 
     #[inline]
@@ -166,20 +245,8 @@ impl Block<'_> {
         if raw {
             return self.raw_bit() == 1;
         }
-        let w = self.nbw(x, y);
-        let contrib = |sig: u16, neg: u16| -> i32 {
-            if w & sig == 0 {
-                0
-            } else if w & neg != 0 {
-                -1
-            } else {
-                1
-            }
-        };
-        let h = (contrib(N_W, NEG_W) + contrib(N_E, NEG_E)).clamp(-1, 1);
-        let v = (contrib(N_N, NEG_N) + contrib(N_S, NEG_S)).clamp(-1, 1);
-        let (cx, xor) = sc_context(h, v);
-        let bit = self.decide(cx) ^ xor;
+        let e = SC_LUT[sc_index(self.nbw(x, y))];
+        let bit = self.decide((e & 0x7F) as usize) ^ (e >> 7) as u32;
         bit == 1
     }
 
@@ -212,11 +279,10 @@ impl Block<'_> {
                     if self.nbw(x, y) & 0xFF == 0 {
                         continue;
                     }
-                    let (h, v, d) = self.neighbours(x, y);
                     let bit = if raw {
                         self.raw_bit()
                     } else {
-                        self.decide(zc_context(self.orient, h, v, d))
+                        self.decide(self.zc(x, y))
                     };
                     if bit == 1 {
                         let neg = self.decode_sign(x, y, raw);
@@ -282,12 +348,9 @@ impl Block<'_> {
                 }
                 for y in start..(s + 4).min(self.h) {
                     let i = self.idx(x, y);
-                    if self.flags[i] & (SIG | VISIT) == 0 {
-                        let (h, v, d) = self.neighbours(x, y);
-                        if self.decide(zc_context(self.orient, h, v, d)) == 1 {
-                            let neg = self.decode_sign(x, y, false);
-                            self.set_significant(x, y, p, neg);
-                        }
+                    if self.flags[i] & (SIG | VISIT) == 0 && self.decide(self.zc(x, y)) == 1 {
+                        let neg = self.decode_sign(x, y, false);
+                        self.set_significant(x, y, p, neg);
                     }
                     self.flags[i] &= !VISIT;
                 }
@@ -337,13 +400,21 @@ pub(crate) fn decode(
     }
     let total = total.min(3 * bitplanes - 2);
     let stride = w + 2;
+    let mut scratch = SCRATCH.take();
+    fn reset<T: Copy + Default>(v: &mut Vec<T>, n: usize) {
+        v.clear();
+        v.resize(n, T::default());
+    }
+    reset(&mut scratch.flags, stride * (h + 2));
+    reset(&mut scratch.nb, stride * (h + 2));
+    reset(&mut scratch.mag, w * h);
     let mut b = Block {
         w,
         h,
         stride,
-        flags: vec![0; stride * (h + 2)],
-        nb: vec![0; stride * (h + 2)],
-        mag: vec![0; w * h],
+        flags: std::mem::take(&mut scratch.flags),
+        nb: std::mem::take(&mut scratch.nb),
+        mag: std::mem::take(&mut scratch.mag),
         orient,
         vsc: style & STYLE_VSC != 0,
         ctx: initial_contexts(),
@@ -403,5 +474,10 @@ pub(crate) fn decode(
             out[y * w + x] = if f & NEG != 0 { -m } else { m };
         }
     }
+    SCRATCH.set(Scratch {
+        flags: b.flags,
+        nb: b.nb,
+        mag: b.mag,
+    });
     Ok(())
 }
