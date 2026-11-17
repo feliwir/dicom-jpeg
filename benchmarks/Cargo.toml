@@ -11,6 +11,8 @@ rust-version = "1.92"
 
 [dependencies]
 dicom-jpeg = { path = "../crates/dicom-jpeg", features = ["jpeg2000-part2"] }
+dicom-jpeg-common.workspace = true
+dicom-jpeg-jpeg = { workspace = true, features = ["kernels"] }
 dicom-core.workspace = true
 dicom-dictionary-std.workspace = true
 dicom-encoding.workspace = true
@@ -58,4 +60,8 @@ harness = false
 
 [[bench]]
 name = "jxl"
+harness = false
+
+[[bench]]
+name = "kernels"
 harness = false

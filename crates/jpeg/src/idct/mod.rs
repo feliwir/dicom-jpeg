@@ -49,7 +49,7 @@ pub(crate) fn idct_block(coef: &[i32; 64], precision: u8, out: &mut [u16], strid
 
 /// Inverse DCT of each block of `coefs` into the 8 x 8 block of `out` at the
 /// same index, with the implementation for `level`.
-pub(crate) fn idct_blocks(level: Level, coefs: &[[i32; 64]], precision: u8, out: &mut [[u16; 64]]) {
+pub fn idct_blocks(level: Level, coefs: &[[i32; 64]], precision: u8, out: &mut [[u16; 64]]) {
     assert_eq!(coefs.len(), out.len());
     if precision > 8 {
         for (c, o) in coefs.iter().zip(out.iter_mut()) {

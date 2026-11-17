@@ -19,7 +19,7 @@ mod neon;
 mod sse41;
 
 /// `out[j]` = average of `row[2j]` and `row[2j + 1]` (bias `j % 2`).
-pub(crate) fn h2v1(level: Level, precision: u8, row: &[u16], out: &mut [u16]) {
+pub fn h2v1(level: Level, precision: u8, row: &[u16], out: &mut [u16]) {
     let row = &row[..2 * out.len()];
     if precision > 12 {
         return scalar::h2v1(row, out);
@@ -29,7 +29,7 @@ pub(crate) fn h2v1(level: Level, precision: u8, row: &[u16], out: &mut [u16]) {
 
 /// `out[j]` = average of the 2 x 2 samples at column `2j` of rows `a` and `b`
 /// (bias `1 + j % 2`).
-pub(crate) fn h2v2(level: Level, precision: u8, a: &[u16], b: &[u16], out: &mut [u16]) {
+pub fn h2v2(level: Level, precision: u8, a: &[u16], b: &[u16], out: &mut [u16]) {
     let (a, b) = (&a[..2 * out.len()], &b[..2 * out.len()]);
     if precision > 12 {
         return scalar::h2v2(a, b, out);

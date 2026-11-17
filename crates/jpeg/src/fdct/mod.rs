@@ -39,7 +39,7 @@ const FIX_3_072711026: i32 = 25172;
 /// A divisor with its reciprocal for exact division by multiplication
 /// (Lemire et al., "Faster remainder by direct computation"): for any
 /// 32-bit `n`, `n / d == (m * n) >> 64` with `m = 2^64 / d + 1`.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 struct Divisor {
     half: u32,
     m: u64,
@@ -71,7 +71,8 @@ impl Divisor {
 /// the correctly rounded quotient never reaches the next integer, as that
 /// is at least `1 / d` away while half a unit in the last place there is at
 /// most `(a / d + 1) * 2^-24 < 1 / d`.
-pub(crate) struct QuantTable {
+#[derive(Debug)]
+pub struct QuantTable {
     div: [Divisor; 64],
     divf: [f32; 64],
     half: [i32; 64],
@@ -81,7 +82,7 @@ pub(crate) struct QuantTable {
 impl QuantTable {
     /// For quantisation values `q` (natural order) and coefficients limited
     /// to `-max..=max`.
-    pub(crate) fn new(q: &[u16; 64], max: i32) -> Self {
+    pub fn new(q: &[u16; 64], max: i32) -> Self {
         let d = |k: usize| q[k].max(1) as u32 * 8;
         QuantTable {
             div: std::array::from_fn(|k| Divisor::new(d(k))),
@@ -94,7 +95,7 @@ impl QuantTable {
 
 /// Forward DCT and quantisation (natural order) of the blocks of one block
 /// row: block `i` is at `src[8 * i..]` with row stride `stride`.
-pub(crate) fn fdct_quantize(
+pub fn fdct_quantize(
     level: Level,
     src: &[u16],
     stride: usize,

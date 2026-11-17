@@ -447,6 +447,8 @@ dependencies = [
  "dicom-dictionary-std",
  "dicom-encoding",
  "dicom-jpeg",
+ "dicom-jpeg-common",
+ "dicom-jpeg-jpeg",
  "dicom-object",
  "hayro-jpeg2000",
  "jpeg-decoder",

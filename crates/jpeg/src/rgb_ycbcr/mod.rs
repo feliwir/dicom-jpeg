@@ -34,7 +34,7 @@ const CRB: i32 = fix(0.08131);
 
 /// Replace the R, G, B samples of `a`, `b`, `c` (of `precision` bits, all of
 /// the same length) by Y, Cb, Cr.
-pub(crate) fn rgb_to_ycbcr(level: Level, precision: u8, [a, b, c]: [&mut [u16]; 3]) {
+pub fn rgb_to_ycbcr(level: Level, precision: u8, [a, b, c]: [&mut [u16]; 3]) {
     let n = a.len();
     let (b, c) = (&mut b[..n], &mut c[..n]);
     // The weighted sums need 16 + precision + 1 bits: SIMD covers <= 12.

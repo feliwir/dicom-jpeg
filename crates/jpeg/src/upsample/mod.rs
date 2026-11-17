@@ -21,7 +21,7 @@ mod sse41;
 /// Horizontal triangle filter of `src` (at least 2 samples) into `dst`
 /// (`2 * src.len()` samples): output 2i gets 3/4 of input i and 1/4 of i-1
 /// (rounding bias 1), output 2i+1 3/4 of i and 1/4 of i+1 (bias 2).
-pub(crate) fn h2v1(level: Level, precision: u8, src: &[u16], dst: &mut [u16]) {
+pub fn h2v1(level: Level, precision: u8, src: &[u16], dst: &mut [u16]) {
     let dst = &mut dst[..2 * src.len()];
     if precision > 12 {
         return scalar::h2v1(src, dst);
@@ -32,7 +32,7 @@ pub(crate) fn h2v1(level: Level, precision: u8, src: &[u16], dst: &mut [u16]) {
 /// h2v2 output row from the `near` and `far` input rows (at least 2
 /// samples): column sums 3 * near + far, then the h2v1 weights 3:1 with
 /// rounding biases 8 (even outputs) and 7 (odd outputs).
-pub(crate) fn h2v2(level: Level, precision: u8, near: &[u16], far: &[u16], dst: &mut [u16]) {
+pub fn h2v2(level: Level, precision: u8, near: &[u16], far: &[u16], dst: &mut [u16]) {
     let far = &far[..near.len()];
     let dst = &mut dst[..2 * near.len()];
     if precision > 12 {

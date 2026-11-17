@@ -29,7 +29,7 @@ const FGB: i32 = fix(0.34414);
 
 /// Convert the samples of `y`, `cb`, `cr` (of `precision` <= 16 bits) to
 /// `r`, `g`, `b` (all of the same length).
-pub(crate) fn ycbcr_to_rgb(
+pub fn ycbcr_to_rgb(
     level: Level,
     [y, cb, cr]: [&[u16]; 3],
     precision: u8,

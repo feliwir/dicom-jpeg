@@ -20,6 +20,15 @@ DICOM_JPEG_BENCH_LEVELS=all cargo bench -p dicom-jpeg-benchmarks --bench jpeg
 
 `DICOM_JPEG_SIMD=<level>` instead lowers the level for the whole run.
 
+The `kernels` bench times each SIMD kernel by itself (IDCT, FDCT and
+quantisation, up/downsampling, colour conversion, interleaving) at every
+level the CPU supports, on 64 K samples of synthetic data:
+
+```sh
+cargo bench -p dicom-jpeg-benchmarks --bench kernels
+cargo bench -p dicom-jpeg-benchmarks --bench kernels -- idct
+```
+
 Criterion writes an HTML report to `target/criterion/report/index.html`,
 with one page per group (violin plot of all implementations) and per
 benchmark.

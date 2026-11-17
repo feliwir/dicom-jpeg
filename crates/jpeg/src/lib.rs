@@ -28,6 +28,19 @@ mod ycbcr;
 #[cfg(feature = "encode")]
 pub use encoder::{ChromaSubsampling, EncoderOptions, Process, encode_with};
 
+/// The internal kernels, exposed only for benchmarking them one by one.
+/// Not a stable API.
+#[cfg(feature = "kernels")]
+#[doc(hidden)]
+pub mod kernels {
+    pub use crate::downsample::{h2v1 as downsample_h2v1, h2v2 as downsample_h2v2};
+    pub use crate::fdct::{QuantTable, fdct_quantize};
+    pub use crate::idct::idct_blocks;
+    pub use crate::rgb_ycbcr::rgb_to_ycbcr;
+    pub use crate::upsample::{h2v1 as upsample_h2v1, h2v2 as upsample_h2v2};
+    pub use crate::ycbcr::ycbcr_to_rgb;
+}
+
 use dicom_jpeg_common::Result;
 use dicom_jpeg_common::{Codec, DecodeOptions, Image, ImageInfo, Limits};
 
