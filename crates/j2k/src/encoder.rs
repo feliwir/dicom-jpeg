@@ -511,7 +511,8 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
                     let mut n = 0usize;
                     for &v in p.data.iter().step_by(3) {
                         let a = v.abs() as f64;
-                        let q = (a / d).floor();
+                        // a / d >= 0: truncation is floor (and no libm call).
+                        let q = (a / d) as i64 as f64;
                         let rec = if q == 0.0 { 0.0 } else { (q + 0.5) * d };
                         err += (a - rec) * (a - rec);
                         n += 1;
@@ -538,7 +539,7 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
         let mut per_comp = Vec::with_capacity(nc);
         for comp in &decomposed {
             let bands = quantized(comp, &|v: f32, i| {
-                let q = (v.abs() as f64 / steps[i].2).floor() as i32;
+                let q = (v.abs() as f64 / steps[i].2) as i32; // floor of a non-negative value
                 if v < 0.0 { -q } else { q }
             });
             for (i, b) in bands.iter().enumerate() {

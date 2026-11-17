@@ -21,6 +21,7 @@ mod modular;
 mod render;
 mod vardct;
 
+use dicom_jpeg_common::float::round_i32;
 use dicom_jpeg_common::{Codec, ColorSpace, DecodeOptions, Image, ImageInfo};
 use dicom_jpeg_common::{Error, Result};
 
@@ -610,6 +611,8 @@ fn to_image(ih: &ImageHeader, canvas: Canvas) -> Result<Image> {
         return Err(Error::unsupported(CODEC, "image orientation"));
     }
     let maxf = max as f32;
+    // f32 -> u16 casts saturate at u16::MAX.
+    let top = max.min(u16::MAX as i64) as i32;
     match canvas.frame {
         FrameOut::Int(planes) => {
             let planes: Vec<&[i32]> = (0..nc)
@@ -619,9 +622,7 @@ fn to_image(ih: &ImageHeader, canvas: Canvas) -> Result<Image> {
         }
         FrameOut::Normalised(planes) => {
             let planes: Vec<&[f32]> = planes[..nc].iter().map(|p| &p[..n]).collect();
-            Image::from_planes_with(info, &planes, |v| {
-                (v * maxf).round().clamp(0.0, maxf) as u16
-            })
+            Image::from_planes_with(info, &planes, |v| round_i32(v * maxf).clamp(0, top) as u16)
         }
         FrameOut::Linear(planes) => {
             let tf = match ih.color.transfer {
@@ -643,7 +644,9 @@ fn to_image(ih: &ImageHeader, canvas: Canvas) -> Result<Image> {
             } else {
                 planes.iter().map(|p| &p[..n]).collect()
             };
-            Image::from_planes_with(info, &planes, |v| (tf.encode(v) * maxf).round() as u16)
+            Image::from_planes_with(info, &planes, |v| {
+                round_i32(tf.encode(v) * maxf).clamp(0, u16::MAX as i32) as u16
+            })
         }
     }
 }

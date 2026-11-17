@@ -10,6 +10,7 @@ mod image;
 mod options;
 
 pub mod color;
+pub mod float;
 pub mod huffman;
 
 pub use error::{Error, Result};

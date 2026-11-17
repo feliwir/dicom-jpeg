@@ -9,6 +9,7 @@ use super::t1::{self, Orient};
 use super::tile::{HeaderReader, HtState, TileComponent, ceil_div, decode_packet, packet_order};
 use dicom_jpeg_common::Limits;
 use dicom_jpeg_common::color::{rct, ycbcr};
+use dicom_jpeg_common::float::{round_i32, round_i64};
 use dicom_jpeg_common::{Error, Result};
 
 /// A decoded image component.
@@ -317,7 +318,7 @@ fn decode_tile(
                     data: p
                         .data
                         .iter()
-                        .map(|&v| (v.round() as i64).clamp(lo, hi) as i32)
+                        .map(|&v| round_i64(v).clamp(lo, hi) as i32)
                         .collect(),
                 },
                 None => Plane {
@@ -407,7 +408,7 @@ fn decode_tile(
                     data: p
                         .data
                         .iter()
-                        .map(|&v| ((v as f64).round() as i64 + shift).clamp(lo, hi) as i32)
+                        .map(|&v| (round_i32(v) as i64 + shift).clamp(lo, hi) as i32)
                         .collect(),
                 }
             }
