@@ -5,7 +5,7 @@
 //! DCMTK). Progressive, hierarchical and arithmetic-coded streams (retired
 //! DICOM transfer syntaxes) are reported as unsupported.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 mod bitreader;
 mod color;

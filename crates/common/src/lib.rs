@@ -3,7 +3,7 @@
 //! tools used by more than one codec (canonical prefix codes, colour
 //! transforms).
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 mod error;
 mod image;
@@ -13,6 +13,7 @@ pub mod bitio;
 pub mod color;
 pub mod float;
 pub mod huffman;
+pub mod simd;
 
 pub use error::{Error, Result};
 pub use image::{ColorSpace, Image, ImageInfo, Samples};

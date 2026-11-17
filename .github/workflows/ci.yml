@@ -11,7 +11,11 @@ env:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    # arm64 lints the NEON code, which is only compiled on AArch64.
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -32,7 +36,12 @@ jobs:
       - run: cargo hack check -p dicom-jpeg --all-targets --feature-powerset --depth 2 --exclude-features parallel
 
   test:
-    runs-on: ubuntu-latest
+    # Unit tests compare every SIMD level the runner supports with the
+    # scalar code; arm64 covers NEON.
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       # Cache LFS objects to save LFS bandwidth: the test data is ~470 MB.
@@ -50,6 +59,10 @@ jobs:
         run: cd testdata && sha256sum -c --quiet SHA256SUMS
       - run: cargo test --workspace --all-features --exclude dicom-jpeg-benchmarks
       - run: cargo test -p dicom-jpeg --no-default-features --features dicom,jpeg,encode
+      - name: Test the scalar fallback end to end
+        run: cargo test --workspace --all-features --exclude dicom-jpeg-benchmarks
+        env:
+          DICOM_JPEG_SIMD: scalar
 
   # The benchmarks build the reference codecs from source (C/C++, needs
   # cmake and nasm) and are only compiled and linted here, not run.
@@ -68,7 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.88
+      - uses: dtolnay/rust-toolchain@1.89
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --all-features --exclude dicom-jpeg-benchmarks
 

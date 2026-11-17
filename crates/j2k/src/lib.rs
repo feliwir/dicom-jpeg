@@ -9,7 +9,7 @@
 //! Features: `htj2k` (ISO/IEC 15444-15 block coder), `part2` (ISO/IEC
 //! 15444-2 multiple component transforms) and `encode`.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 mod codestream;
 mod decoder;

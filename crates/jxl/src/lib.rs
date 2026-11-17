@@ -6,7 +6,7 @@
 //! JPEG reconstruction are reported as unsupported. The encoder writes
 //! lossless modular codestreams.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 mod bits;
 #[cfg(feature = "encode")]

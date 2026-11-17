@@ -19,7 +19,7 @@
 
 pub use dicom_jpeg_common::{
     AppliedTransform, Codec, ColorOutput, ColorSpace, DecodeOptions, EncodeOptions, Encoded, Error,
-    Image, ImageInfo, Limits, Result, Samples, color, huffman,
+    Image, ImageInfo, Limits, Result, Samples, color, huffman, simd,
 };
 
 #[cfg(feature = "jpeg2000")]
