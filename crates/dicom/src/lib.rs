@@ -70,7 +70,21 @@ fn decode(codec: Codec, data: &[u8], opts: &DecodeOptions) -> Result<Image> {
     }
 }
 
+// The dependency only enables entry collection in the registry crate (its
+// `inventory-registry` feature); nothing in it is called.
 #[cfg(feature = "inventory-registry")]
+use dicom_transfer_syntax_registry as _;
+
+// Without any codec there is nothing to register.
+#[cfg(all(
+    feature = "inventory-registry",
+    any(
+        feature = "jpeg",
+        feature = "jpeg-ls",
+        feature = "jpeg2000",
+        feature = "jpeg-xl"
+    )
+))]
 mod registry;
 mod syntax;
 #[cfg(feature = "encode")]
