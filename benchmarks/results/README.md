@@ -32,14 +32,14 @@ see [../README.md](../README.md) for the method and inputs.
 
 | Benchmark | Implementation | Mpixel/s | Compression ratio |
 |---|---|---|---|
-| Decode · JLSL lossless | **dicom-jpeg** | 63.5 |  |
-| Decode · JLSL lossless | CharLS | 120.2 |  |
-| Decode · JLSN near-lossless | **dicom-jpeg** | 69.2 |  |
-| Decode · JLSN near-lossless | CharLS | 125.2 |  |
-| Encode · lossless | **dicom-jpeg** | 37.1 | 3.59 |
-| Encode · lossless | CharLS | 74.4 | 3.59 |
-| Encode · near 2 | **dicom-jpeg** | 30.5 | 6.34 |
-| Encode · near 2 | CharLS | 56.5 | 6.34 |
+| Decode · JLSL lossless | **dicom-jpeg** | 76.6 |  |
+| Decode · JLSL lossless | CharLS | 118.3 |  |
+| Decode · JLSN near-lossless | **dicom-jpeg** | 92.6 |  |
+| Decode · JLSN near-lossless | CharLS | 122.2 |  |
+| Encode · lossless | **dicom-jpeg** | 53.1 | 3.59 |
+| Encode · lossless | CharLS | 73.7 | 3.59 |
+| Encode · near 2 | **dicom-jpeg** | 47.1 | 6.34 |
+| Encode · near 2 | CharLS | 57.8 | 6.34 |
 
 ## JPEG 2000
 
