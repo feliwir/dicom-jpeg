@@ -34,6 +34,8 @@ encode = [
 ]
 # dicom-rs PixelDataReader / PixelDataWriter adapters
 dicom = ["dep:dicom-jpeg-dicom"]
+# Register the dicom-rs adapter in the dicom-rs transfer syntax registry.
+inventory-registry = ["dicom", "dicom-jpeg-dicom/inventory-registry"]
 # Data parallelism (tiles, code-blocks, frames)
 parallel = ["dep:rayon"]
 
@@ -51,6 +53,9 @@ dicom-core.workspace = true
 dicom-dictionary-std.workspace = true
 dicom-encoding.workspace = true
 dicom-object = "0.10.1"
+# Without dicom-rs's own codecs, so the registry tests see only dicom-jpeg.
+dicom-pixeldata = { version = "0.10.1", default-features = false }
+dicom-transfer-syntax-registry = { version = "0.10.1", default-features = false }
 jpeg-decoder = "0.3"
 jxl-oxide = { version = "0.12", default-features = false }
 png = "0.18"
@@ -58,6 +63,10 @@ png = "0.18"
 [[test]]
 name = "dicom_decode"
 required-features = ["dicom"]
+
+[[test]]
+name = "dicom_registry"
+required-features = ["inventory-registry"]
 
 [[test]]
 name = "dicom_roundtrip"

@@ -5,6 +5,14 @@
 //! `dicom_dictionary_std::uids`); it maps each to a codec crate and its
 //! parameters.
 //!
+//! With the `inventory-registry` feature the adapter is also registered in
+//! the dicom-rs transfer syntax registry, so that dicom-rs itself (e.g.
+//! `dicom_pixeldata::PixelDecoder::decode_pixel_data`) uses it. dicom-rs
+//! keeps a built-in codec that already decodes and encodes a transfer
+//! syntax; in dicom-rs 0.10 that is only JPEG baseline with the `jpeg`
+//! feature of dicom-pixeldata, which its default `native` feature enables.
+//! Make sure the crate is linked, e.g. with `use dicom_jpeg_dicom as _;`.
+//!
 //! Notes on the dicom-rs adapter contract:
 //! * decoded 3-sample images are delivered as interleaved RGB
 //!   (YCbCr data is converted, J2K RCT/ICT is inverted);
@@ -61,6 +69,8 @@ fn decode(codec: Codec, data: &[u8], opts: &DecodeOptions) -> Result<Image> {
     }
 }
 
+#[cfg(feature = "inventory-registry")]
+mod registry;
 mod syntax;
 #[cfg(feature = "encode")]
 mod writer;

@@ -414,6 +414,7 @@ dependencies = [
  "dicom-core",
  "dicom-dictionary-std",
  "encoding",
+ "inventory",
  "snafu",
 ]
 
@@ -431,6 +432,8 @@ dependencies = [
  "dicom-jpeg-jpegls",
  "dicom-jpeg-jxl",
  "dicom-object",
+ "dicom-pixeldata",
+ "dicom-transfer-syntax-registry",
  "jpeg-decoder",
  "jxl-oxide",
  "png",
@@ -479,6 +482,7 @@ dependencies = [
  "dicom-jpeg-jpeg",
  "dicom-jpeg-jpegls",
  "dicom-jpeg-jxl",
+ "dicom-transfer-syntax-registry",
 ]
 
 [[package]]
@@ -537,6 +541,23 @@ dependencies = [
  "dicom-dictionary-std",
  "dicom-encoding",
  "smallvec",
+ "snafu",
+ "tracing",
+]
+
+[[package]]
+name = "dicom-pixeldata"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d9507a2e372845943e6bca1e745026a07f34dcf6ca99ecbc5658288b4613106"
+dependencies = [
+ "byteorder",
+ "dicom-core",
+ "dicom-dictionary-std",
+ "dicom-encoding",
+ "dicom-object",
+ "dicom-transfer-syntax-registry",
+ "num-traits",
  "snafu",
  "tracing",
 ]
@@ -741,6 +762,15 @@ name = "ident_case"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
+
+[[package]]
+name = "inventory"
+version = "0.3.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6928282826c822ad91bf1c9a1cb90a30ba1c26770749929b4656cd6be829cd7c"
+dependencies = [
+ "rustversion",
+]
 
 [[package]]
 name = "itertools"

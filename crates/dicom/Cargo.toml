@@ -15,6 +15,12 @@ jpeg2000 = ["dep:dicom-jpeg-j2k"]
 jpeg2000-part2 = ["jpeg2000", "dicom-jpeg-j2k/part2"]
 htj2k = ["jpeg2000", "dicom-jpeg-j2k/htj2k"]
 jpeg-xl = ["dep:dicom-jpeg-jxl"]
+# Register the adapter in the dicom-rs transfer syntax registry.
+inventory-registry = [
+    "dicom-encoding/inventory-registry",
+    "dep:dicom-transfer-syntax-registry",
+    "dicom-transfer-syntax-registry/inventory-registry",
+]
 encode = [
     "dicom-jpeg-jpeg?/encode",
     "dicom-jpeg-jpegls?/encode",
@@ -31,6 +37,7 @@ dicom-jpeg-jxl = { workspace = true, optional = true }
 dicom-core.workspace = true
 dicom-dictionary-std.workspace = true
 dicom-encoding.workspace = true
+dicom-transfer-syntax-registry = { version = "0.10.1", default-features = false, optional = true }
 
 [lints]
 workspace = true

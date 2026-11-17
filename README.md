@@ -16,7 +16,40 @@ Other features:
 
 * `encode`: enables the encoders.
 * `dicom`: dicom-rs `PixelDataReader` / `PixelDataWriter` adapters (`dicom_jpeg::dicom_rs::PixelAdapter`, crate `dicom-jpeg-dicom`).
+* `inventory-registry`: also register the adapters in the dicom-rs transfer syntax registry (see below).
 * `parallel`: rayon parallelism.
+
+## Using it with dicom-rs
+
+With the `inventory-registry` feature, dicom-rs itself uses dicom-jpeg, e.g.
+in `dicom_pixeldata::PixelDecoder::decode_pixel_data`:
+
+```toml
+[dependencies]
+dicom = "0.10"
+dicom-jpeg = { git = "https://github.com/feliwir/dicom-jpeg", features = ["inventory-registry"] }
+```
+
+If nothing else in your code refers to dicom-jpeg, add `use dicom_jpeg as _;`
+so that the crate is linked and its registrations are seen.
+
+dicom-rs keeps a built-in codec when it already decodes and encodes a
+transfer syntax. In dicom-rs 0.10 that is only JPEG baseline (.50), with the
+`jpeg` feature that dicom-pixeldata's default `native` feature enables; every
+other JPEG-family syntax goes to dicom-jpeg. To have dicom-jpeg handle JPEG
+baseline as well, use dicom-pixeldata without `native` (keeping RLE and
+deflate):
+
+```toml
+[dependencies]
+dicom = { version = "0.10", default-features = false, features = ["inventory-registry", "ul"] }
+dicom-pixeldata = { version = "0.10", default-features = false, features = ["rle", "deflate", "rayon"] }
+dicom-jpeg = { git = "https://github.com/feliwir/dicom-jpeg", features = ["inventory-registry"] }
+```
+
+Without the feature, use the adapter directly:
+`dicom_jpeg::dicom_rs::PixelAdapter::from_uid(ts)` implements
+`PixelDataReader` and `PixelDataWriter`.
 
 ## Crates
 
