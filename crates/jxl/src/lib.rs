@@ -435,9 +435,11 @@ fn decode_frame(
         )?;
         let stride = bw * 8;
         planes = rec.map(|p| {
-            (0..h)
-                .flat_map(|y| p[y * stride..y * stride + w].to_vec())
-                .collect()
+            let mut out = Vec::with_capacity(w * h);
+            for row in p.chunks(stride).take(h) {
+                out.extend_from_slice(&row[..w]);
+            }
+            out
         });
         if fh.epf_iters > 0 {
             sigma = vec![0f32; bw * bh];

@@ -1104,10 +1104,40 @@ fn two_rows(x: &mut [f32], w: usize, i: usize, j: usize) -> (&mut [f32], &mut [f
 /// Column-wise y_i = sum_k x_k cos((2i + 1) k pi / 2n) of the n x w block
 /// `x`, in place; `tmp` is scratch of the same size.
 fn dct3(mul: &[Vec<f32>], x: &mut [f32], tmp: &mut [f32], n: usize, w: usize) {
-    if n == 1 {
-        return;
+    match n {
+        2 => dct3_n::<2>(mul, x, tmp, w),
+        4 => dct3_n::<4>(mul, x, tmp, w),
+        8 => dct3_n::<8>(mul, x, tmp, w),
+        16 => dct3_n::<16>(mul, x, tmp, w),
+        32 => dct3_n::<32>(mul, x, tmp, w),
+        64 => dct3_n::<64>(mul, x, tmp, w),
+        128 => dct3_n::<128>(mul, x, tmp, w),
+        256 => dct3_n::<256>(mul, x, tmp, w),
+        _ => {}
     }
-    if n == 2 {
+}
+
+/// Column-wise z_k = sum_i x_i cos((2i + 1) k pi / 2n) (the transpose of
+/// `dct3`).
+fn dct2(mul: &[Vec<f32>], x: &mut [f32], tmp: &mut [f32], n: usize, w: usize) {
+    match n {
+        2 => dct2_n::<2>(mul, x, tmp, w),
+        4 => dct2_n::<4>(mul, x, tmp, w),
+        8 => dct2_n::<8>(mul, x, tmp, w),
+        16 => dct2_n::<16>(mul, x, tmp, w),
+        32 => dct2_n::<32>(mul, x, tmp, w),
+        64 => dct2_n::<64>(mul, x, tmp, w),
+        128 => dct2_n::<128>(mul, x, tmp, w),
+        256 => dct2_n::<256>(mul, x, tmp, w),
+        _ => {}
+    }
+}
+
+/// `dct3` for size `N`; the recursion halves go through `dct3`, which
+/// dispatches to the specialisation of size `N / 2`.
+#[inline(always)]
+fn dct3_n<const N: usize>(mul: &[Vec<f32>], x: &mut [f32], tmp: &mut [f32], w: usize) {
+    if N == 2 {
         let (r0, r1) = x[..2 * w].split_at_mut(w);
         for (a, b) in r0.iter_mut().zip(r1) {
             let (p, q) = (*a, *b * std::f32::consts::FRAC_1_SQRT_2);
@@ -1116,8 +1146,8 @@ fn dct3(mul: &[Vec<f32>], x: &mut [f32], tmp: &mut [f32], n: usize, w: usize) {
         }
         return;
     }
-    let h = n / 2;
-    let (even, odd) = tmp[..n * w].split_at_mut(h * w);
+    let h = N / 2;
+    let (even, odd) = tmp[..N * w].split_at_mut(h * w);
     for k in 0..h {
         even[k * w..][..w].copy_from_slice(&x[2 * k * w..][..w]);
         let o = &mut odd[k * w..][..w];
@@ -1131,14 +1161,14 @@ fn dct3(mul: &[Vec<f32>], x: &mut [f32], tmp: &mut [f32], n: usize, w: usize) {
             }
         }
     }
-    let (s0, s1) = x[..n * w].split_at_mut(h * w);
+    let (s0, s1) = x[..N * w].split_at_mut(h * w);
     dct3(mul, even, s0, h, w);
     dct3(mul, odd, s1, h, w);
-    let m = &mul[n.trailing_zeros() as usize];
+    let m = &mul[N.trailing_zeros() as usize];
     for i in 0..h {
         let mi = m[i];
         let (e, o) = (&even[i * w..][..w], &odd[i * w..][..w]);
-        let (xi, xj) = two_rows(x, w, i, n - 1 - i);
+        let (xi, xj) = two_rows(x, w, i, N - 1 - i);
         for (((xi, xj), &e), &o) in xi.iter_mut().zip(xj).zip(e).zip(o) {
             let o = o * mi;
             *xi = e + o;
@@ -1147,13 +1177,10 @@ fn dct3(mul: &[Vec<f32>], x: &mut [f32], tmp: &mut [f32], n: usize, w: usize) {
     }
 }
 
-/// Column-wise z_k = sum_i x_i cos((2i + 1) k pi / 2n) (the transpose of
-/// `dct3`).
-fn dct2(mul: &[Vec<f32>], x: &mut [f32], tmp: &mut [f32], n: usize, w: usize) {
-    if n == 1 {
-        return;
-    }
-    if n == 2 {
+/// `dct2` for size `N`.
+#[inline(always)]
+fn dct2_n<const N: usize>(mul: &[Vec<f32>], x: &mut [f32], tmp: &mut [f32], w: usize) {
+    if N == 2 {
         let (r0, r1) = x[..2 * w].split_at_mut(w);
         for (a, b) in r0.iter_mut().zip(r1) {
             let (p, q) = (*a, *b);
@@ -1162,19 +1189,19 @@ fn dct2(mul: &[Vec<f32>], x: &mut [f32], tmp: &mut [f32], n: usize, w: usize) {
         }
         return;
     }
-    let h = n / 2;
-    let m = &mul[n.trailing_zeros() as usize];
-    let (even, odd) = tmp[..n * w].split_at_mut(h * w);
+    let h = N / 2;
+    let m = &mul[N.trailing_zeros() as usize];
+    let (even, odd) = tmp[..N * w].split_at_mut(h * w);
     for i in 0..h {
         let mi = m[i];
-        let (xi, xj) = two_rows(x, w, i, n - 1 - i);
+        let (xi, xj) = two_rows(x, w, i, N - 1 - i);
         let (e, o) = (&mut even[i * w..][..w], &mut odd[i * w..][..w]);
         for (((e, o), &a), &b) in e.iter_mut().zip(o).zip(&*xi).zip(&*xj) {
             *e = a + b;
             *o = (a - b) * mi;
         }
     }
-    let (s0, s1) = x[..n * w].split_at_mut(h * w);
+    let (s0, s1) = x[..N * w].split_at_mut(h * w);
     dct2(mul, even, s0, h, w);
     dct2(mul, odd, s1, h, w);
     for k in 0..h {

@@ -59,32 +59,49 @@ pub(crate) fn gaborish(planes: &mut [Vec<f32>; 3], w: usize, h: usize, weights: 
     }
 }
 
-const KERNEL_STEP0: [(isize, isize); 12] = [
-    (0, -2),
-    (-1, -1),
-    (0, -1),
-    (1, -1),
-    (-2, 0),
-    (-1, 0),
-    (1, 0),
-    (2, 0),
-    (-1, 1),
-    (0, 1),
-    (1, 1),
-    (0, 2),
-];
-const KERNEL_STEP12: [(isize, isize); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
-const DIST_STEP0: [(isize, isize); 5] = [(0, -1), (1, 0), (0, 0), (-1, 0), (0, 1)];
-const DIST_STEP1: [(isize, isize); 5] = [(0, -1), (0, 0), (0, 1), (-1, 0), (1, 0)];
-const DIST_STEP2: [(isize, isize); 1] = [(0, 0)];
+/// One EPF step: the kernel taps, and the distance taps around each.
+trait EpfStep {
+    const KERNEL: &'static [(usize, usize)];
+    const DIST: &'static [(usize, usize)];
+}
+
+// Offsets are (dx + 3, dy + 3), indices into a 7 x 7 window.
+struct Step0;
+impl EpfStep for Step0 {
+    const KERNEL: &'static [(usize, usize)] = &[
+        (3, 1),
+        (2, 2),
+        (3, 2),
+        (4, 2),
+        (1, 3),
+        (2, 3),
+        (4, 3),
+        (5, 3),
+        (2, 4),
+        (3, 4),
+        (4, 4),
+        (3, 5),
+    ];
+    const DIST: &'static [(usize, usize)] = &[(3, 2), (4, 3), (3, 3), (2, 3), (3, 4)];
+}
+
+struct Step1;
+impl EpfStep for Step1 {
+    const KERNEL: &'static [(usize, usize)] = &[(3, 2), (3, 4), (2, 3), (4, 3)];
+    const DIST: &'static [(usize, usize)] = &[(3, 2), (3, 3), (3, 4), (2, 3), (4, 3)];
+}
+
+struct Step2;
+impl EpfStep for Step2 {
+    const KERNEL: &'static [(usize, usize)] = Step1::KERNEL;
+    const DIST: &'static [(usize, usize)] = &[(3, 3)];
+}
 
 /// Border of the padded planes: kernel reach (2) plus distance reach (1).
 const EPF_BORDER: usize = 3;
 
-/// One EPF step on `planes`, in place, with kernel taps `kernel` and the
-/// distance taps `dist` around each.
-#[allow(clippy::too_many_arguments)]
-fn epf_step<const K: usize, const D: usize>(
+/// One EPF step on `planes`, in place.
+fn epf_step<S: EpfStep>(
     planes: &mut [Vec<f32>; 3],
     w: usize,
     h: usize,
@@ -92,56 +109,125 @@ fn epf_step<const K: usize, const D: usize>(
     sigma_stride: usize,
     params: &EpfParams,
     step_mul: f32,
-    kernel: &[(isize, isize); K],
-    dist: &[(isize, isize); D],
 ) {
     const B: usize = EPF_BORDER;
     let pw = w + 2 * B;
     let src: [Vec<f32>; 3] = std::array::from_fn(|c| padded(&planes[c], w, h, B));
-    let off = |(dx, dy): (isize, isize)| dy * pw as isize + dx;
-    let kernel: [isize; K] = kernel.map(off);
-    let dist: [isize; D] = dist.map(off);
     let scale = params.channel_scale;
     let mul = [step_mul, step_mul * params.border_sad_mul];
-    let [p0, p1, p2] = planes;
-    let out = [&mut p0[..], &mut p1[..], &mut p2[..]];
     for y in 0..h {
         let y_border = (y + 1) & 0b110 == 0;
         let sigma_row = &sigma[(y / 8) * sigma_stride..];
-        let row = (y + B) * pw + B;
-        for x in 0..w {
-            let s = sigma_row[x / 8];
+        // Rows y - 3 ..= y + 3 of each padded channel.
+        let rows: [[&[f32]; 7]; 3] =
+            std::array::from_fn(|c| std::array::from_fn(|j| &src[c][(y + j) * pw..][..pw]));
+        let neg_inv_sigma = |s: f32, border: bool| {
+            6.6 * (std::f32::consts::FRAC_1_SQRT_2 - 1.0) / s * mul[border as usize]
+        };
+        for x0 in (0..w).step_by(8) {
+            // sigma is constant over the 8 columns of a block.
+            let s = sigma_row[x0 / 8];
             if s < 0.3 {
-                // Unfiltered: `out` already holds the input.
+                // Unfiltered: `planes` already holds the input.
                 continue;
             }
-            let border = y_border || matches!(x & 7, 0 | 7);
-            let neg_inv_sigma =
-                6.6 * (std::f32::consts::FRAC_1_SQRT_2 - 1.0) / s * mul[border as usize];
-            let i = (row + x) as isize;
-            let at = |c: usize, o: isize| src[c][(i + o) as usize];
-            let mut sum_w = 1.0f32;
-            let mut sums: [f32; 3] = std::array::from_fn(|c| at(c, 0));
-            for &k in &kernel {
-                let mut d = 0f32;
-                for (c, &sc) in scale.iter().enumerate() {
-                    let mut acc = 0f32;
-                    for &o in &dist {
-                        acc += (at(c, k + o) - at(c, o)).abs();
-                    }
-                    d += sc * acc;
+            if x0 + 8 <= w {
+                let nis: [f32; 8] =
+                    std::array::from_fn(|l| neg_inv_sigma(s, y_border || l == 0 || l == 7));
+                // Columns x0 - 3 .. x0 + 11 of rows y - 3 ..= y + 3.
+                let win: [[&[f32; 14]; 7]; 3] = std::array::from_fn(|c| {
+                    std::array::from_fn(|j| rows[c][j][x0..].first_chunk().expect("padded row"))
+                });
+                let out = epf_lanes::<S>(&win, &nis, &scale);
+                for (c, o) in out.iter().enumerate() {
+                    planes[c][y * w + x0..][..8].copy_from_slice(o);
                 }
-                let weight = (1.0 + d * neg_inv_sigma).max(0.0);
-                sum_w += weight;
-                for (c, sum) in sums.iter_mut().enumerate() {
-                    *sum += weight * at(c, k);
-                }
+                continue;
             }
-            for c in 0..3 {
-                out[c][y * w + x] = sums[c] / sum_w;
+            for x in x0..w {
+                let nis = neg_inv_sigma(s, y_border || matches!(x & 7, 0 | 7));
+                let win: [[&[f32; 7]; 7]; 3] = std::array::from_fn(|c| {
+                    std::array::from_fn(|j| rows[c][j][x..].first_chunk().expect("padded row"))
+                });
+                let out = epf_pixel::<S>(&win, nis, &scale);
+                for (c, &o) in out.iter().enumerate() {
+                    planes[c][y * w + x] = o;
+                }
             }
         }
     }
+}
+
+/// The EPF of one pixel from its 7 x 7 window per channel.
+#[inline(always)]
+fn epf_pixel<S: EpfStep>(win: &[[&[f32; 7]; 7]; 3], nis: f32, scale: &[f32; 3]) -> [f32; 3] {
+    let at = |c: usize, (dx, dy): (usize, usize)| win[c][dy][dx];
+    let mut sum_w = 1.0f32;
+    let mut sums: [f32; 3] = std::array::from_fn(|c| at(c, (3, 3)));
+    for &(kx, ky) in S::KERNEL {
+        let mut d = 0f32;
+        for (c, &sc) in scale.iter().enumerate() {
+            let mut acc = 0f32;
+            for &(ox, oy) in S::DIST {
+                acc += (at(c, (kx + ox - 3, ky + oy - 3)) - at(c, (ox, oy))).abs();
+            }
+            d += sc * acc;
+        }
+        let weight = (1.0 + d * nis).max(0.0);
+        sum_w += weight;
+        for (c, sum) in sums.iter_mut().enumerate() {
+            *sum += weight * at(c, (kx, ky));
+        }
+    }
+    sums.map(|s| s / sum_w)
+}
+
+/// `epf_pixel` for 8 adjacent pixels at once (the same operations per
+/// lane), from their 14 x 7 window per channel.
+#[inline(always)]
+fn epf_lanes<S: EpfStep>(
+    win: &[[&[f32; 14]; 7]; 3],
+    nis: &[f32; 8],
+    scale: &[f32; 3],
+) -> [[f32; 8]; 3] {
+    let at = |c: usize, (dx, dy): (usize, usize)| -> [f32; 8] {
+        win[c][dy][dx..dx + 8].try_into().expect("8 lanes")
+    };
+    let mut sum_w = [1.0f32; 8];
+    let mut sums: [[f32; 8]; 3] = std::array::from_fn(|c| at(c, (3, 3)));
+    for &(kx, ky) in S::KERNEL {
+        let mut d = [0f32; 8];
+        for (c, &sc) in scale.iter().enumerate() {
+            let mut acc = [0f32; 8];
+            for &(ox, oy) in S::DIST {
+                let (a, b) = (at(c, (kx + ox - 3, ky + oy - 3)), at(c, (ox, oy)));
+                for l in 0..8 {
+                    acc[l] += (a[l] - b[l]).abs();
+                }
+            }
+            for l in 0..8 {
+                d[l] += sc * acc[l];
+            }
+        }
+        let mut weight = [0f32; 8];
+        for l in 0..8 {
+            weight[l] = (1.0 + d[l] * nis[l]).max(0.0);
+            sum_w[l] += weight[l];
+        }
+        for (c, sum) in sums.iter_mut().enumerate() {
+            let v = at(c, (kx, ky));
+            for l in 0..8 {
+                sum[l] += weight[l] * v[l];
+            }
+        }
+    }
+    let mut out = [[0f32; 8]; 3];
+    for c in 0..3 {
+        for l in 0..8 {
+            out[c][l] = sums[c][l] / sum_w[l];
+        }
+    }
+    out
 }
 
 /// Edge-preserving filter with a per-8x8-block sigma map.
@@ -156,45 +242,13 @@ pub(crate) fn epf(
     let iters = fh.epf_iters;
     let p = &fh.epf;
     if iters == 3 {
-        let mul = p.pass0_sigma_scale;
-        epf_step(
-            planes,
-            w,
-            h,
-            sigma,
-            sigma_stride,
-            p,
-            mul,
-            &KERNEL_STEP0,
-            &DIST_STEP0,
-        );
+        epf_step::<Step0>(planes, w, h, sigma, sigma_stride, p, p.pass0_sigma_scale);
     }
     if iters >= 1 {
-        epf_step(
-            planes,
-            w,
-            h,
-            sigma,
-            sigma_stride,
-            p,
-            1.0,
-            &KERNEL_STEP12,
-            &DIST_STEP1,
-        );
+        epf_step::<Step1>(planes, w, h, sigma, sigma_stride, p, 1.0);
     }
     if iters >= 2 {
-        let mul = p.pass2_sigma_scale;
-        epf_step(
-            planes,
-            w,
-            h,
-            sigma,
-            sigma_stride,
-            p,
-            mul,
-            &KERNEL_STEP12,
-            &DIST_STEP2,
-        );
+        epf_step::<Step2>(planes, w, h, sigma, sigma_stride, p, p.pass2_sigma_scale);
     }
 }
 
