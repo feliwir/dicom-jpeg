@@ -3,70 +3,26 @@
 //! is a marker.
 
 use super::CODEC;
+use dicom_jpeg_common::bitio::{self, T87};
 use dicom_jpeg_common::{Error, Result};
 
+/// Reads JPEG-LS scan data; past the end of the data it supplies zero bits
+/// until 64 Kibit of them make the stream count as truncated.
 #[derive(Debug)]
 pub(crate) struct BitReader<'a> {
-    data: &'a [u8],
-    pos: usize,
-    acc: u64,
-    nbits: u32,
-    prev_ff: bool,
-    at_marker: bool,
-    /// Zero bits supplied past the end of the scan data.
-    padding: u64,
+    r: bitio::BitReader<'a, T87>,
 }
 
 impl<'a> BitReader<'a> {
     pub(crate) fn new(data: &'a [u8], pos: usize) -> Self {
         BitReader {
-            data,
-            pos,
-            acc: 0,
-            nbits: 0,
-            prev_ff: false,
-            at_marker: false,
-            padding: 0,
+            r: bitio::BitReader::new(data, pos),
         }
     }
 
     #[inline]
-    fn load_byte(&mut self) {
-        let (value, width) = if self.at_marker {
-            (0, 8)
-        } else {
-            match self.data.get(self.pos) {
-                Some(&b) if self.prev_ff && b & 0x80 != 0 => {
-                    self.at_marker = true;
-                    // The FF already consumed belongs to the marker; step back.
-                    self.pos -= 1;
-                    (0, 8)
-                }
-                Some(&b) => {
-                    self.pos += 1;
-                    let width = if self.prev_ff { 7 } else { 8 };
-                    self.prev_ff = b == 0xFF;
-                    (b as u64 & ((1 << width) - 1), width)
-                }
-                None => {
-                    self.at_marker = true;
-                    (0, 8)
-                }
-            }
-        };
-        if self.at_marker {
-            self.padding += 8;
-        }
-        self.acc = (self.acc << width) | value;
-        self.nbits += width;
-    }
-
-    #[inline]
-    fn ensure(&mut self, n: u32) -> Result<()> {
-        while self.nbits < n {
-            self.load_byte();
-        }
-        if self.padding > 1 << 16 {
+    fn check(&self) -> Result<()> {
+        if self.r.padding_bits() > 1 << 16 {
             return Err(Error::Truncated { codec: CODEC });
         }
         Ok(())
@@ -74,33 +30,47 @@ impl<'a> BitReader<'a> {
 
     #[inline]
     pub(crate) fn bit(&mut self) -> Result<bool> {
-        self.ensure(1)?;
-        self.nbits -= 1;
-        Ok((self.acc >> self.nbits) & 1 == 1)
+        let b = self.r.bits(1) == 1;
+        self.check()?;
+        Ok(b)
     }
 
     /// Read `n` (<= 32) bits.
     #[inline]
     pub(crate) fn bits(&mut self, n: u32) -> Result<i32> {
-        if n == 0 {
-            return Ok(0);
-        }
-        self.ensure(n)?;
-        self.nbits -= n;
-        Ok(((self.acc >> self.nbits) & ((1u64 << n) - 1)) as i32)
+        let v = self.r.bits(n) as i32;
+        self.check()?;
+        Ok(v)
     }
 
     /// Count zero bits up to the next 1 bit (consumed), at most `max`.
     #[inline]
     pub(crate) fn unary(&mut self, max: u32) -> Result<u32> {
         let mut n = 0;
-        while !self.bit()? {
-            n += 1;
+        loop {
+            if self.r.available() < 32 {
+                self.r.fill();
+                self.check()?;
+            }
+            // Bits past `available()` are zero, so a 1 found is a real one.
+            let zeros = self.r.buffer().leading_zeros();
+            let avail = self.r.available();
+            if zeros < avail {
+                n += zeros;
+                if n > max {
+                    return Err(Error::invalid(CODEC, "unary code too long"));
+                }
+                self.r.consume(zeros);
+                self.r.consume(1);
+                return Ok(n);
+            }
+            n += avail;
             if n > max {
                 return Err(Error::invalid(CODEC, "unary code too long"));
             }
+            self.r.consume(avail / 2);
+            self.r.consume(avail - avail / 2);
         }
-        Ok(n)
     }
 
     /// Decode a limited-length Golomb code (A.5.3).
@@ -116,40 +86,18 @@ impl<'a> BitReader<'a> {
         Ok(((high as i32) << k) + self.bits(k)?)
     }
 
-    /// Skip to the marker following the current position (byte aligned) and
-    /// return it without consuming it.
-    fn seek_marker(&mut self) -> Option<u8> {
-        self.acc = 0;
-        self.nbits = 0;
-        self.prev_ff = false;
-        self.at_marker = false;
-        let mut i = self.pos;
-        while i + 1 < self.data.len() {
-            if self.data[i] == 0xFF && self.data[i + 1] & 0x80 != 0 && self.data[i + 1] != 0xFF {
-                self.pos = i;
-                return Some(self.data[i + 1]);
-            }
-            i += 1;
-        }
-        self.pos = self.data.len();
-        None
-    }
-
     /// Consume an RSTm marker at the next byte boundary.
     pub(crate) fn restart(&mut self) -> Result<()> {
-        match self.seek_marker() {
-            Some(0xD0..=0xD7) => {
-                self.pos += 2;
-                Ok(())
-            }
-            _ => Err(Error::invalid(CODEC, "expected restart marker")),
+        if self.r.restart() {
+            Ok(())
+        } else {
+            Err(Error::invalid(CODEC, "expected restart marker"))
         }
     }
 
     /// Byte position of the marker that follows the scan.
-    pub(crate) fn end_position(mut self) -> usize {
-        self.seek_marker();
-        self.pos
+    pub(crate) fn end_position(self) -> usize {
+        self.r.end_position()
     }
 }
 

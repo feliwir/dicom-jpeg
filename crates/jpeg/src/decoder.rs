@@ -566,7 +566,7 @@ impl<'a> Decoder<'a> {
         let restart = self.restart_interval;
         let mut rst_index = 0u8;
         let mut handle_restart = |reader: &mut BitReader<'_>, pred: &mut [i32]| {
-            reader.restart(rst_index);
+            reader.restart();
             rst_index = (rst_index + 1) & 7;
             pred.fill(0);
         };
@@ -688,7 +688,7 @@ impl<'a> Decoder<'a> {
             for y in 0..ch {
                 for x in 0..cw {
                     if restart > 0 && n > 0 && n.is_multiple_of(restart) {
-                        reader.restart(rst_index);
+                        reader.restart();
                         rst_index = (rst_index + 1) & 7;
                         need_init[0] = true;
                         first_line[0] = y;
@@ -703,7 +703,7 @@ impl<'a> Decoder<'a> {
             for my_ in 0..my {
                 for mx_ in 0..mx {
                     if restart > 0 && n > 0 && n.is_multiple_of(restart) {
-                        reader.restart(rst_index);
+                        reader.restart();
                         rst_index = (rst_index + 1) & 7;
                         for (si, sc) in scan.components.iter().enumerate() {
                             need_init[si] = true;

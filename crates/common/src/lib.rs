@@ -9,6 +9,7 @@ mod error;
 mod image;
 mod options;
 
+pub mod bitio;
 pub mod color;
 pub mod float;
 pub mod huffman;
