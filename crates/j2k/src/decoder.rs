@@ -216,23 +216,25 @@ fn decode_tile(
                                 &mut buf,
                             )?;
                         }
-                        for y in 0..h {
-                            for x in 0..w {
-                                let mut v = buf[y * w + x];
-                                if roi > 0 {
-                                    let m = v.unsigned_abs();
-                                    if m >= 1 << (roi + 1) {
-                                        let m = (m >> roi) as i32;
-                                        v = if v < 0 { -m } else { m };
-                                    }
-                                }
-                                let px = (cb.x0 - band.x0) as usize + x;
-                                let py = (cb.y0 - band.y0) as usize + y;
-                                if reversible {
+                        let (px, py) = ((cb.x0 - band.x0) as usize, (cb.y0 - band.y0) as usize);
+                        if roi > 0 {
+                            for v in buf.iter_mut() {
+                                *v = roi_descale(*v, roi);
+                            }
+                        }
+                        // Doubled mid-point values to sub-band coefficients,
+                        // a code-block row at a time.
+                        for (y, src) in buf.chunks_exact(w).take(h).enumerate() {
+                            if reversible {
+                                let dst = &mut pi.data[(py + y) * pi.w + px..][..w];
+                                for (d, &v) in dst.iter_mut().zip(src) {
                                     let m = v.unsigned_abs() as i32 >> 1;
-                                    pi.data[py * pi.w + px] = if v < 0 { -m } else { m };
-                                } else {
-                                    pf.data[py * pf.w + px] = v as f32 * 0.5 * delta;
+                                    *d = if v < 0 { -m } else { m };
+                                }
+                            } else {
+                                let dst = &mut pf.data[(py + y) * pf.w + px..][..w];
+                                for (d, &v) in dst.iter_mut().zip(src) {
+                                    *d = v as f32 * 0.5 * delta;
                                 }
                             }
                         }
@@ -357,19 +359,15 @@ fn decode_tile(
         let (b, c) = rest.split_at_mut(1);
         match (&mut a[0], &mut b[0], &mut c[0]) {
             (Coefficients::Int(y0), Coefficients::Int(y1), Coefficients::Int(y2)) => {
-                for i in 0..y0[0].data.len() {
-                    let [r, g, b] = rct::inverse(y0[0].data[i], y1[0].data[i], y2[0].data[i]);
-                    y0[0].data[i] = r;
-                    y1[0].data[i] = g;
-                    y2[0].data[i] = b;
+                let (c1, c2) = (y1[0].data.iter_mut(), y2[0].data.iter_mut());
+                for ((a, b), c) in y0[0].data.iter_mut().zip(c1).zip(c2) {
+                    [*a, *b, *c] = rct::inverse(*a, *b, *c);
                 }
             }
             (Coefficients::Float(y0), Coefficients::Float(y1), Coefficients::Float(y2)) => {
-                for i in 0..y0[0].data.len() {
-                    let [r, g, b] = ycbcr::inverse(y0[0].data[i], y1[0].data[i], y2[0].data[i]);
-                    y0[0].data[i] = r;
-                    y1[0].data[i] = g;
-                    y2[0].data[i] = b;
+                let (c1, c2) = (y1[0].data.iter_mut(), y2[0].data.iter_mut());
+                for ((a, b), c) in y0[0].data.iter_mut().zip(c1).zip(c2) {
+                    [*a, *b, *c] = ycbcr::inverse(*a, *b, *c);
                 }
             }
             _ => {
@@ -390,26 +388,45 @@ fn decode_tile(
         } else {
             (0, (1i64 << prec) - 1, 1i64 << (prec - 1))
         };
+        // With bounds and shift in i32 range (precision <= 31), a saturating
+        // i32 add before the clamp gives exactly the i64 result.
+        let narrow = i32::try_from(lo)
+            .ok()
+            .zip(i32::try_from(hi).ok())
+            .zip(i32::try_from(shift).ok());
         let plane = match co {
             Coefficients::Int(mut p) => {
                 let mut p = p.remove(0);
-                for v in &mut p.data {
-                    *v = (*v as i64 + shift).clamp(lo, hi) as i32;
+                if let Some(((lo, hi), shift)) = narrow {
+                    for v in &mut p.data {
+                        *v = v.saturating_add(shift).clamp(lo, hi);
+                    }
+                } else {
+                    for v in &mut p.data {
+                        *v = (*v as i64 + shift).clamp(lo, hi) as i32;
+                    }
                 }
                 p
             }
             Coefficients::Float(mut p) => {
                 let p = p.remove(0);
+                let data = if let Some(((lo, hi), shift)) = narrow {
+                    p.data
+                        .iter()
+                        .map(|&v| round_i32(v).saturating_add(shift).clamp(lo, hi))
+                        .collect()
+                } else {
+                    p.data
+                        .iter()
+                        .map(|&v| (round_i32(v) as i64 + shift).clamp(lo, hi) as i32)
+                        .collect()
+                };
                 Plane {
                     x0: p.x0,
                     y0: p.y0,
                     w: p.w,
                     h: p.h,
-                    data: p
-                        .data
-                        .iter()
-                        .map(|&v| (round_i32(v) as i64 + shift).clamp(lo, hi) as i32)
-                        .collect(),
+                    data,
                 }
             }
         };
@@ -465,17 +482,18 @@ pub(crate) fn decode_codestream(cs: &Codestream, opts: &DecoderOptions) -> Resul
         for (c, p) in planes.into_iter().enumerate().take(comps.len()) {
             let comp = &mut comps[c];
             let (ox, oy) = origins[c];
+            // Tile columns x with 0 <= p.x0 + x - ox < width.
+            let (cw, tx0) = (comp.width as usize, p.x0 as usize);
+            let x0 = (ox as usize).saturating_sub(tx0).min(p.w);
+            let x1 = (ox as usize + cw).saturating_sub(tx0).min(p.w).max(x0);
             for y in 0..p.h {
                 let gy = (p.y0 as usize + y).wrapping_sub(oy as usize);
-                if gy >= comp.height as usize {
+                if gy >= comp.height as usize || x0 == x1 {
                     continue;
                 }
-                for x in 0..p.w {
-                    let gx = (p.x0 as usize + x).wrapping_sub(ox as usize);
-                    if gx < comp.width as usize {
-                        comp.data[gy * comp.width as usize + gx] = p.data[y * p.w + x];
-                    }
-                }
+                let gx0 = tx0 + x0 - ox as usize;
+                comp.data[gy * cw + gx0..][..x1 - x0]
+                    .copy_from_slice(&p.data[y * p.w + x0..][..x1 - x0]);
             }
         }
     }
@@ -483,4 +501,17 @@ pub(crate) fn decode_codestream(cs: &Codestream, opts: &DecoderOptions) -> Resul
         return Err(Error::invalid(CODEC, "no tile data"));
     }
     Ok(comps)
+}
+
+/// Undo the ROI scaling (maxshift, Annex H) of a doubled code-block value:
+/// magnitudes at or above `2^(roi + 1)` belong to the region of interest.
+#[inline]
+fn roi_descale(v: i32, roi: u32) -> i32 {
+    let m = v.unsigned_abs();
+    if m >= 1 << (roi + 1) {
+        let m = (m >> roi) as i32;
+        if v < 0 { -m } else { m }
+    } else {
+        v
+    }
 }
