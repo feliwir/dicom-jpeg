@@ -51,6 +51,21 @@ impl<'a> BitReader<'a> {
 
     #[inline]
     fn refill(&mut self) {
+        // Fast path: whole bytes from one 8-byte load. Bits of `w` beyond
+        // them land above `nbits` and equal the data loaded there later.
+        if let Some(chunk) = self.data.get(self.pos..self.pos + 8) {
+            let w = u64::from_le_bytes(chunk.try_into().expect("8 bytes"));
+            self.buf |= w << self.nbits;
+            let n = (63 - self.nbits) / 8;
+            self.pos += n as usize;
+            self.nbits += 8 * n;
+            return;
+        }
+        self.refill_slow();
+    }
+
+    #[cold]
+    fn refill_slow(&mut self) {
         while self.nbits <= 56 {
             if self.pos < self.data.len() {
                 self.buf |= (self.data[self.pos] as u64) << self.nbits;

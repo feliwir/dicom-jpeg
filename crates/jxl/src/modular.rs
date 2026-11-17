@@ -847,7 +847,29 @@ struct Neighbours {
 }
 
 impl Neighbours {
-    #[inline]
+    /// The neighbours of (x, y) in a channel of width `width` whose rows
+    /// before `y` and samples before `x` are decoded.
+    #[inline(always)]
+    fn get(data: &[i32], width: usize, x: usize, y: usize) -> Self {
+        if y >= 2 && x >= 2 && x + 2 < width {
+            // Interior: no edge rules apply.
+            let i = y * width + x;
+            let p = |j: usize| data[j] as i64;
+            Neighbours {
+                w: p(i - 1),
+                n: p(i - width),
+                nw: p(i - width - 1),
+                ne: p(i - width + 1),
+                nn: p(i - 2 * width),
+                ww: p(i - 2),
+                nee: p(i - width + 2),
+            }
+        } else {
+            Self::at(data, width, x, y)
+        }
+    }
+
+    #[cold]
     fn at(data: &[i32], width: usize, x: usize, y: usize) -> Self {
         let p = |xx: usize, yy: usize| data[yy * width + xx] as i64;
         let w = if x > 0 {
@@ -940,7 +962,8 @@ struct WpState {
     width: usize,
     prediction: [i64; 4],
     pred: i64,
-    pred_errors: [Vec<u32>; 4],
+    /// Per position: the errors of the four sub-predictors.
+    pred_errors: Vec<[u32; 4]>,
     error: Vec<i32>,
 }
 
@@ -955,7 +978,7 @@ impl WpState {
             width,
             prediction: [0; 4],
             pred: 0,
-            pred_errors: [vec![0; n], vec![0; n], vec![0; n], vec![0; n]],
+            pred_errors: vec![[0; 4]; n],
             error: vec![0; n],
         }
     }
@@ -975,12 +998,16 @@ impl WpState {
         let pos_n = prev_row + x;
         let pos_ne = if x < xsize - 1 { pos_n + 1 } else { pos_n };
         let pos_nw = if x > 0 { pos_n - 1 } else { pos_n };
-        let mut weights = [0u32; 4];
-        for (i, wt) in weights.iter_mut().enumerate() {
-            let e = &self.pred_errors[i];
-            let sum = e[pos_n] as u64 + e[pos_ne] as u64 + e[pos_nw] as u64;
-            *wt = Self::error_weight(sum, self.header.w[i]);
-        }
+        let (en, ene, enw) = (
+            self.pred_errors[pos_n],
+            self.pred_errors[pos_ne],
+            self.pred_errors[pos_nw],
+        );
+        let weights: [u32; 4] = std::array::from_fn(|i| {
+            let sum = en[i] as u64 + ene[i] as u64 + enw[i] as u64;
+            Self::error_weight(sum, self.header.w[i])
+        });
+        let mut weights = weights;
         let n = nb.n << PRED_EXTRA_BITS;
         let w = nb.w << PRED_EXTRA_BITS;
         let ne = nb.ne << PRED_EXTRA_BITS;
@@ -1048,11 +1075,13 @@ impl WpState {
         let prev_row = if y & 1 == 1 { xsize + 2 } else { 0 };
         let v = val << PRED_EXTRA_BITS;
         self.error[cur_row + x] = (self.pred - v) as i32;
-        for i in 0..4 {
-            let err = (((self.prediction[i] - v).abs() + PRED_ROUND) >> PRED_EXTRA_BITS) as u32;
-            self.pred_errors[i][cur_row + x] = err;
-            self.pred_errors[i][prev_row + x + 1] =
-                self.pred_errors[i][prev_row + x + 1].wrapping_add(err);
+        let err: [u32; 4] = std::array::from_fn(|i| {
+            (((self.prediction[i] - v).abs() + PRED_ROUND) >> PRED_EXTRA_BITS) as u32
+        });
+        self.pred_errors[cur_row + x] = err;
+        let above = &mut self.pred_errors[prev_row + x + 1];
+        for (a, e) in above.iter_mut().zip(err) {
+            *a = a.wrapping_add(e);
         }
     }
 }
@@ -1109,7 +1138,7 @@ fn decode_channel(
     {
         for y in 0..h {
             for x in 0..w {
-                let nb = Neighbours::at(&ch.data, w, x, y);
+                let nb = Neighbours::get(&ch.data, w, x, y);
                 let wp_pred = match &mut wp {
                     Some(s) => s.predict(x, y, &nb, None),
                     None => 0,
@@ -1129,15 +1158,65 @@ fn decode_channel(
         return Ok(());
     }
 
+    // Child indices are checked once here instead of at every step.
+    if cfg.nodes.iter().any(|node| {
+        matches!(node, Node::Split { left, right, .. }
+            if *left as usize >= cfg.nodes.len() || *right as usize >= cfg.nodes.len())
+    }) {
+        return Err(invalid("MA tree child out of range"));
+    }
     let nprops = 16 + 4 * num_refs.max(1);
     let mut props = vec![0i64; nprops.max(max_prop as usize + 1)];
     props[0] = idx as i64;
     props[1] = stream_id as i64;
     for y in 0..h {
         props[2] = y as i64;
+        // Splits on the channel, stream and row (properties 0..=2) are
+        // the same for the whole row: resolve them once.
+        let mut root = 0usize;
+        while let Node::Split {
+            prop: prop @ 0..=2,
+            value,
+            left,
+            right,
+        } = cfg.nodes[root]
+        {
+            root = if props[prop as usize] as i32 > value {
+                left
+            } else {
+                right
+            } as usize;
+        }
+        if let Node::Leaf {
+            ctx,
+            predictor,
+            offset,
+            multiplier,
+        } = cfg.nodes[root]
+        {
+            // One leaf for the row: no properties needed.
+            for x in 0..w {
+                let nb = Neighbours::get(&ch.data, w, x, y);
+                let wp_pred = match &mut wp {
+                    Some(s) => s.predict(x, y, &nb, None),
+                    None => 0,
+                };
+                let v = unpack_signed(reader.read(hist, br, ctx as usize)?) as i64;
+                let val = v
+                    .wrapping_mul(multiplier)
+                    .wrapping_add(offset)
+                    .wrapping_add(predict(predictor, &nb, wp_pred));
+                let val = val as i32;
+                ch.data[y * w + x] = val;
+                if let Some(s) = &mut wp {
+                    s.update(val as i64, x, y);
+                }
+            }
+            continue;
+        }
         let mut prev_prop9 = 0i64;
         for x in 0..w {
-            let nb = Neighbours::at(&ch.data, w, x, y);
+            let nb = Neighbours::get(&ch.data, w, x, y);
             props[3] = x as i64;
             props[4] = nb.n.abs();
             props[5] = nb.w.abs();
@@ -1186,7 +1265,7 @@ fn decode_channel(
                 }
             }
             // Walk the tree.
-            let mut n = 0usize;
+            let mut n = root;
             let (ctx, predictor, offset, multiplier) = loop {
                 match cfg.nodes[n] {
                     Node::Split {
@@ -1197,9 +1276,6 @@ fn decode_channel(
                     } => {
                         let pv = props.get(prop as usize).copied().unwrap_or(0) as i32;
                         n = if pv > value { left } else { right } as usize;
-                        if n >= cfg.nodes.len() {
-                            return Err(invalid("MA tree child out of range"));
-                        }
                     }
                     Node::Leaf {
                         ctx,
