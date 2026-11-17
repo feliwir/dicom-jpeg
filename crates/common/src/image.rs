@@ -171,58 +171,64 @@ impl Image {
     /// Split the interleaved samples into one plane per component. Values
     /// are masked to `bits_per_sample` and sign-extended for signed images.
     pub fn planes(&self) -> Vec<Vec<i32>> {
-        let nc = self.info.components as usize;
         let bits = self.info.bits_per_sample as u32;
-        let mask = if bits >= 32 {
-            -1
+        let mask = ((1u64 << bits) - 1) as i32;
+        let sign = 1i32 << (bits - 1);
+        if self.info.signed {
+            // Two's complement sign extension of the low `bits` bits.
+            self.planes_with(|v| ((v as i32 & mask) ^ sign) - sign)
         } else {
-            ((1u64 << bits) - 1) as i32
-        };
-        let signed = self.info.signed && bits < 32;
-        let convert = |v: i32| {
-            let v = v & mask;
-            if signed && v & (1 << (bits - 1)) != 0 {
-                v | !mask
-            } else {
-                v
-            }
-        };
-        let values: Vec<i32> = match &self.samples {
-            Samples::U8(v) => v.iter().map(|&s| convert(s as i32)).collect(),
-            Samples::U16(v) => v.iter().map(|&s| convert(s as i32)).collect(),
-        };
-        (0..nc)
-            .map(|c| values.iter().skip(c).step_by(nc).copied().collect())
-            .collect()
+            self.planes_with(|v| v as i32 & mask)
+        }
+    }
+
+    /// Split the interleaved samples into one plane per component, mapping
+    /// each stored sample (as `u16`) through `convert`.
+    pub fn planes_with<T: Copy + Default>(&self, convert: impl Fn(u16) -> T) -> Vec<Vec<T>> {
+        let nc = self.info.components as usize;
+        match &self.samples {
+            Samples::U8(v) => deinterleave(v, nc, convert),
+            Samples::U16(v) => deinterleave(v, nc, convert),
+        }
     }
 
     /// Interleave component planes into an image. Values are clamped to the
     /// range of `info` (signed values are stored in two's complement).
     pub fn from_planes(info: ImageInfo, planes: &[Vec<i32>]) -> Result<Self> {
+        let bits = info.bits_per_sample as u32;
+        let (lo, hi) = if info.signed {
+            (-(1i32 << (bits - 1)), (1i32 << (bits - 1)) - 1)
+        } else {
+            (0, ((1u32 << bits) - 1) as i32)
+        };
+        let mask = ((1u32 << bits) - 1) as i32;
+        let planes: Vec<&[i32]> = planes.iter().map(Vec::as_slice).collect();
+        Self::from_planes_with(info, &planes, |v| (v.clamp(lo, hi) & mask) as u16)
+    }
+
+    /// Interleave component planes of `width * height` values into an
+    /// image, mapping each value to its stored sample through `convert`.
+    /// Results are truncated to 8 bits when `info` has at most 8 bits per
+    /// sample, so `convert` must keep them in range.
+    pub fn from_planes_with<T: Copy>(
+        info: ImageInfo,
+        planes: &[&[T]],
+        convert: impl Fn(T) -> u16,
+    ) -> Result<Self> {
         let nc = info.components as usize;
         let n = info.width as usize * info.height as usize;
         if planes.len() != nc || planes.iter().any(|p| p.len() != n) {
             return Err(Error::input("planes do not match the image description"));
         }
-        let bits = info.bits_per_sample as u32;
-        let (lo, hi) = if info.signed {
-            (-(1i64 << (bits - 1)), (1i64 << (bits - 1)) - 1)
-        } else {
-            (0, (1i64 << bits) - 1)
-        };
-        let mask = (1i64 << bits) - 1;
-        let mut out = Vec::with_capacity(n * nc);
-        for i in 0..n {
-            for p in planes {
-                out.push(((p[i] as i64).clamp(lo, hi) & mask) as u16);
-            }
+        if !(1..=16).contains(&info.bits_per_sample) {
+            return Err(Error::input("bits per sample must be within 1..=16"));
         }
-        let samples = if bits <= 8 {
-            Samples::U8(out.into_iter().map(|v| v as u8).collect())
+        let samples = if info.bits_per_sample <= 8 {
+            Samples::U8(interleave(planes, n, convert))
         } else {
-            Samples::U16(out)
+            Samples::U16(interleave(planes, n, convert))
         };
-        Image::new(info, samples)
+        Ok(Image { info, samples })
     }
 
     /// Append the samples as little-endian bytes using `bytes_per_sample` (1 or 2)
@@ -260,5 +266,145 @@ impl Image {
             _ => return Err(Error::input("storage must be 1 or 2 bytes per sample")),
         }
         Ok(())
+    }
+}
+
+/// A storage type of [`Samples`].
+trait Stored: Copy + Default {
+    fn from_u16(v: u16) -> Self;
+    fn to_u16(self) -> u16;
+}
+
+impl Stored for u8 {
+    #[inline(always)]
+    fn from_u16(v: u16) -> Self {
+        v as u8
+    }
+    #[inline(always)]
+    fn to_u16(self) -> u16 {
+        self as u16
+    }
+}
+
+impl Stored for u16 {
+    #[inline(always)]
+    fn from_u16(v: u16) -> Self {
+        v
+    }
+    #[inline(always)]
+    fn to_u16(self) -> u16 {
+        self
+    }
+}
+
+/// Interleave the first `n` values of each plane, in one pass for the
+/// common one- and three-component cases.
+fn interleave<S: Stored, T: Copy>(planes: &[&[T]], n: usize, f: impl Fn(T) -> u16) -> Vec<S> {
+    let mut out = vec![S::default(); n * planes.len()];
+    match planes {
+        [p] => {
+            for (o, &v) in out.iter_mut().zip(&p[..n]) {
+                *o = S::from_u16(f(v));
+            }
+        }
+        [a, b, c] => {
+            for (o, ((&x, &y), &z)) in out
+                .as_chunks_mut::<3>()
+                .0
+                .iter_mut()
+                .zip(a[..n].iter().zip(&b[..n]).zip(&c[..n]))
+            {
+                *o = [S::from_u16(f(x)), S::from_u16(f(y)), S::from_u16(f(z))];
+            }
+        }
+        _ => {
+            let nc = planes.len();
+            for (c, p) in planes.iter().enumerate() {
+                for (o, &v) in out[c..].iter_mut().step_by(nc).zip(&p[..n]) {
+                    *o = S::from_u16(f(v));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The inverse of [`interleave`].
+fn deinterleave<S: Stored, T: Copy + Default>(
+    src: &[S],
+    nc: usize,
+    f: impl Fn(u16) -> T,
+) -> Vec<Vec<T>> {
+    match nc {
+        1 => vec![src.iter().map(|&s| f(s.to_u16())).collect()],
+        3 => {
+            let px = src.as_chunks::<3>().0;
+            let mut planes = [(); 3].map(|_| Vec::with_capacity(px.len()));
+            for p in px {
+                for (plane, &s) in planes.iter_mut().zip(p) {
+                    plane.push(f(s.to_u16()));
+                }
+            }
+            planes.into()
+        }
+        _ => (0..nc)
+            .map(|c| {
+                src[c..]
+                    .iter()
+                    .step_by(nc)
+                    .map(|&s| f(s.to_u16()))
+                    .collect()
+            })
+            .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn info(components: u16, bits: u8, signed: bool) -> ImageInfo {
+        ImageInfo {
+            width: 3,
+            height: 2,
+            components,
+            bits_per_sample: bits,
+            signed,
+            color_space: ColorSpace::Unknown,
+        }
+    }
+
+    #[test]
+    fn planes_round_trip() {
+        for nc in [1u16, 2, 3, 4] {
+            for (bits, signed) in [(8, false), (12, true), (16, false), (16, true)] {
+                let info = info(nc, bits, signed);
+                let (lo, hi) = if signed {
+                    (-(1i32 << (bits - 1)), (1i32 << (bits - 1)) - 1)
+                } else {
+                    (0, (1i32 << bits) - 1)
+                };
+                let planes: Vec<Vec<i32>> = (0..nc as i32)
+                    .map(|c| {
+                        (0..6)
+                            .map(|i| [lo, hi, 0, 1, lo + c, hi - i][i as usize])
+                            .collect()
+                    })
+                    .collect();
+                let image = Image::from_planes(info, &planes).unwrap();
+                assert_eq!(image.samples.len(), 6 * nc as usize);
+                assert_eq!(image.planes(), planes, "{nc} x {bits} bit, signed {signed}");
+            }
+        }
+    }
+
+    #[test]
+    fn from_planes_clamps_and_masks() {
+        let image =
+            Image::from_planes(info(1, 12, true), &[vec![-5000, 5000, -1, 0, 1, 2]]).unwrap();
+        assert_eq!(
+            image.samples,
+            Samples::U16(vec![0x800, 0x7FF, 0xFFF, 0, 1, 2])
+        );
     }
 }

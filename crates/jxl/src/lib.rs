@@ -21,7 +21,7 @@ mod modular;
 mod render;
 mod vardct;
 
-use dicom_jpeg_common::{Codec, ColorSpace, DecodeOptions, Image, ImageInfo, Samples};
+use dicom_jpeg_common::{Codec, ColorSpace, DecodeOptions, Image, ImageInfo};
 use dicom_jpeg_common::{Error, Result};
 
 use bits::{BitReader, invalid};
@@ -609,22 +609,19 @@ fn to_image(ih: &ImageHeader, canvas: Canvas) -> Result<Image> {
     if ih.orientation != 1 {
         return Err(Error::unsupported(CODEC, "image orientation"));
     }
-    let mut out = vec![0u16; n * nc];
+    let maxf = max as f32;
     match canvas.frame {
         FrameOut::Int(planes) => {
-            for (k, o) in out.iter_mut().enumerate() {
-                let (i, ch) = (k / nc, k % nc);
-                let p = &planes[ch.min(planes.len() - 1)];
-                *o = (p[i] as i64).clamp(0, max) as u16;
-            }
+            let planes: Vec<&[i32]> = (0..nc)
+                .map(|c| &planes[c.min(planes.len() - 1)][..n])
+                .collect();
+            Image::from_planes_with(info, &planes, |v| (v as i64).clamp(0, max) as u16)
         }
         FrameOut::Normalised(planes) => {
-            for i in 0..n {
-                for c in 0..nc {
-                    out[i * nc + c] =
-                        (planes[c][i] * max as f32).round().clamp(0.0, max as f32) as u16;
-                }
-            }
+            let planes: Vec<&[f32]> = planes[..nc].iter().map(|p| &p[..n]).collect();
+            Image::from_planes_with(info, &planes, |v| {
+                (v * maxf).round().clamp(0.0, maxf) as u16
+            })
         }
         FrameOut::Linear(planes) => {
             let tf = match ih.color.transfer {
@@ -637,24 +634,18 @@ fn to_image(ih: &ImageHeader, canvas: Canvas) -> Result<Image> {
                     return Err(Error::unsupported(CODEC, "PQ / HLG transfer functions"));
                 }
             };
-            for i in 0..n {
-                if nc == 1 {
-                    let yl = 0.2126 * planes[0][i] + 0.7152 * planes[1][i] + 0.0722 * planes[2][i];
-                    out[i] = (tf.encode(yl) * max as f32).round() as u16;
-                } else {
-                    for c in 0..nc {
-                        out[i * nc + c] = (tf.encode(planes[c][i]) * max as f32).round() as u16;
-                    }
-                }
-            }
+            let luma: Vec<f32>;
+            let planes: Vec<&[f32]> = if nc == 1 {
+                luma = (0..n)
+                    .map(|i| 0.2126 * planes[0][i] + 0.7152 * planes[1][i] + 0.0722 * planes[2][i])
+                    .collect();
+                vec![&luma]
+            } else {
+                planes.iter().map(|p| &p[..n]).collect()
+            };
+            Image::from_planes_with(info, &planes, |v| (tf.encode(v) * maxf).round() as u16)
         }
     }
-    let samples = if bits <= 8 {
-        Samples::U8(out.into_iter().map(|v| v as u8).collect())
-    } else {
-        Samples::U16(out)
-    };
-    Image::new(info, samples)
 }
 
 #[cfg(test)]

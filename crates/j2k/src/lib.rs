@@ -30,7 +30,7 @@ pub use decoder::{Component, DecoderOptions};
 #[cfg(feature = "encode")]
 pub use encoder::{ComponentWavelet, EncoderOptions, encode_with};
 
-use dicom_jpeg_common::{Codec, ColorSpace, DecodeOptions, Image, ImageInfo, Samples};
+use dicom_jpeg_common::{Codec, ColorSpace, DecodeOptions, Image, ImageInfo};
 use dicom_jpeg_common::{Error, Result};
 
 pub(crate) const CODEC: Codec = Codec::Jpeg2000;
@@ -93,22 +93,6 @@ pub fn decode(data: &[u8], opts: &DecodeOptions) -> Result<Image> {
     let height = comps.iter().map(|c| c.height).max().unwrap_or(0);
     let nc = comps.len();
     let signed = comps[0].signed;
-    let mut out = vec![0u16; width as usize * height as usize * nc];
-    for (ci, c) in comps.iter().enumerate() {
-        let mask = if precision >= 16 {
-            0xFFFF
-        } else {
-            (1u32 << precision) - 1
-        };
-        for y in 0..height as usize {
-            let sy = (y * c.height as usize / height as usize).min(c.height as usize - 1);
-            for x in 0..width as usize {
-                let sx = (x * c.width as usize / width as usize).min(c.width as usize - 1);
-                let v = c.data[sy * c.width as usize + sx];
-                out[(y * width as usize + x) * nc + ci] = (v as u32 & mask) as u16;
-            }
-        }
-    }
     let info = ImageInfo {
         width,
         height,
@@ -121,12 +105,35 @@ pub fn decode(data: &[u8], opts: &DecodeOptions) -> Result<Image> {
             _ => ColorSpace::Unknown,
         },
     };
-    let samples = if precision <= 8 {
-        Samples::U8(out.into_iter().map(|v| v as u8).collect())
-    } else {
-        Samples::U16(out)
-    };
-    Image::new(info, samples)
+    let mask = ((1u32 << precision) - 1) as i32;
+    let (w, h) = (width as usize, height as usize);
+    // Up-sample sub-sampled components by replication.
+    let full: Vec<Vec<i32>> = comps
+        .iter()
+        .filter(|c| (c.width, c.height) != (width, height))
+        .map(|c| {
+            let (cw, ch) = (c.width as usize, c.height as usize);
+            let sx: Vec<usize> = (0..w).map(|x| (x * cw / w).min(cw - 1)).collect();
+            let mut out = Vec::with_capacity(w * h);
+            for y in 0..h {
+                let row = &c.data[(y * ch / h).min(ch - 1) * cw..][..cw];
+                out.extend(sx.iter().map(|&x| row[x]));
+            }
+            out
+        })
+        .collect();
+    let mut full = full.iter();
+    let planes: Vec<&[i32]> = comps
+        .iter()
+        .map(|c| {
+            if (c.width, c.height) == (width, height) {
+                c.data.as_slice()
+            } else {
+                full.next().map_or(&[][..], Vec::as_slice)
+            }
+        })
+        .collect();
+    Image::from_planes_with(info, &planes, |v| (v & mask) as u16)
 }
 
 /// Whether a Part 2 encode of `info` benefits from the component-axis

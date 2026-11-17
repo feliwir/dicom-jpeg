@@ -19,7 +19,7 @@ use scan::{Interleave, ScanLayout};
 
 #[cfg(feature = "encode")]
 use dicom_jpeg_common::{AppliedTransform, Encoded};
-use dicom_jpeg_common::{Codec, ColorSpace, DecodeOptions, Image, ImageInfo, Limits, Samples};
+use dicom_jpeg_common::{Codec, ColorSpace, DecodeOptions, Image, ImageInfo, Limits};
 use dicom_jpeg_common::{Error, Result};
 
 pub(crate) const CODEC: Codec = Codec::JpegLs;
@@ -333,13 +333,6 @@ pub fn decode(data: &[u8], opts: &DecodeOptions) -> Result<Image> {
         }
         inverse_hp(p.hp_transform, frame.precision, &mut planes);
     }
-    let n = frame.width * frame.height;
-    let mut out = vec![0u16; n * nc];
-    for (c, plane) in planes.iter().enumerate() {
-        for (i, &v) in plane.iter().enumerate() {
-            out[i * nc + c] = v;
-        }
-    }
     let color_space = match nc {
         1 => ColorSpace::Gray,
         3 if p.hp_transform == 0 && opts.color_hint == Some(ColorSpace::YCbCr) => ColorSpace::YCbCr,
@@ -354,12 +347,8 @@ pub fn decode(data: &[u8], opts: &DecodeOptions) -> Result<Image> {
         signed: false,
         color_space,
     };
-    let samples = if frame.precision <= 8 {
-        Samples::U8(out.into_iter().map(|v| v as u8).collect())
-    } else {
-        Samples::U16(out)
-    };
-    Image::new(info, samples)
+    let planes: Vec<&[u16]> = planes.iter().map(Vec::as_slice).collect();
+    Image::from_planes_with(info, &planes, |v| v)
 }
 
 #[allow(clippy::needless_range_loop)] // indexes three planes in lockstep
@@ -440,13 +429,7 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
     let mask = ((1u32 << precision) - 1) as u16;
     let near = opts.near as i32;
     let params = Params::new(precision, near, Preset::default())?;
-    let samples: Vec<u16> = match &image.samples {
-        Samples::U8(v) => v.iter().map(|&s| s as u16 & mask).collect(),
-        Samples::U16(v) => v.iter().map(|&s| s & mask).collect(),
-    };
-    let planes: Vec<Vec<u16>> = (0..nc)
-        .map(|c| samples.iter().skip(c).step_by(nc).copied().collect())
-        .collect();
+    let planes = image.planes_with(|s| s & mask);
     let interleave = match (nc, opts.interleave) {
         (1, _) | (_, 0) => Interleave::None,
         (2..=4, 2) => Interleave::Sample,
