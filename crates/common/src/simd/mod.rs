@@ -207,7 +207,13 @@ macro_rules! dispatch {
                 r
             }
             #[cfg(target_arch = "aarch64")]
-            $crate::simd::Level::Neon => neon::$f($($arg),*),
+            $crate::simd::Level::Neon => {
+                // SAFETY: `Level::Neon` is only selected when the CPU
+                // supports NEON (always the case on AArch64).
+                #[allow(unsafe_code)]
+                let r = unsafe { neon::$f($($arg),*) };
+                r
+            }
             _ => scalar::$f($($arg),*),
         }
     }};

@@ -8,18 +8,21 @@ use std::arch::aarch64::*;
 use super::*;
 
 #[inline]
+#[target_feature(enable = "neon")]
 fn mul(a: int32x4_t, k: i32) -> int32x4_t {
     vmulq_n_s32(a, k)
 }
 
 /// `(x + 2^(N-1)) >> N`.
 #[inline]
+#[target_feature(enable = "neon")]
 fn descale<const N: i32>(x: int32x4_t) -> int32x4_t {
     vshrq_n_s32::<N>(vaddq_s32(x, vdupq_n_s32(1 << (N - 1))))
 }
 
 /// The 1-D IDCT of `i[0..8]` (each lane independently), before descaling.
 #[inline]
+#[target_feature(enable = "neon")]
 fn idct_1d(i: &[int32x4_t; 8]) -> [int32x4_t; 8] {
     let add = |a, b| vaddq_s32(a, b);
     let sub = |a, b| vsubq_s32(a, b);
@@ -67,6 +70,7 @@ fn idct_1d(i: &[int32x4_t; 8]) -> [int32x4_t; 8] {
 
 /// Lanes where `i[1..8]` are all zero (all ones), else zero.
 #[inline]
+#[target_feature(enable = "neon")]
 fn ac_zero(i: &[int32x4_t; 8]) -> uint32x4_t {
     let mut ac = i[1];
     for v in &i[2..] {
@@ -77,6 +81,7 @@ fn ac_zero(i: &[int32x4_t; 8]) -> uint32x4_t {
 
 /// Transpose a 4 x 4 matrix of i32 held as 4 row vectors.
 #[inline]
+#[target_feature(enable = "neon")]
 fn transpose4(r: &[int32x4_t]) -> [int32x4_t; 4] {
     let t01 = vtrnq_s32(r[0], r[1]);
     let t23 = vtrnq_s32(r[2], r[3]);
@@ -92,6 +97,7 @@ fn transpose4(r: &[int32x4_t]) -> [int32x4_t; 4] {
 /// (columns 4..8) halves of its 8 rows. Returns the transpose in the same
 /// form.
 #[inline]
+#[target_feature(enable = "neon")]
 fn transpose(l: &[int32x4_t; 8], r: &[int32x4_t; 8]) -> ([int32x4_t; 8], [int32x4_t; 8]) {
     let (a, b, c, d) = (
         transpose4(&l[..4]),
@@ -107,6 +113,7 @@ fn transpose(l: &[int32x4_t; 8], r: &[int32x4_t; 8]) -> ([int32x4_t; 8], [int32x
 
 /// The column pass on one half: descaled outputs, or the DC shortcut.
 #[inline]
+#[target_feature(enable = "neon")]
 fn pass1(rows: &[int32x4_t; 8]) -> [int32x4_t; 8] {
     let o = idct_1d(rows);
     let zero = ac_zero(rows);
@@ -116,6 +123,7 @@ fn pass1(rows: &[int32x4_t; 8]) -> [int32x4_t; 8] {
 
 /// The row pass on one half: level-shifted, clamped samples.
 #[inline]
+#[target_feature(enable = "neon")]
 fn pass2(t: &[int32x4_t; 8]) -> [int32x4_t; 8] {
     let o = idct_1d(t);
     let zero = ac_zero(t);
@@ -128,6 +136,7 @@ fn pass2(t: &[int32x4_t; 8]) -> [int32x4_t; 8] {
 }
 
 #[inline]
+#[target_feature(enable = "neon")]
 fn block(coef: &[i32; 64], out: &mut [u16; 64]) {
     let src = coef.as_chunks::<4>().0;
     let (mut l, mut r) = ([vdupq_n_s32(0); 8], [vdupq_n_s32(0); 8]);
@@ -150,6 +159,7 @@ fn block(coef: &[i32; 64], out: &mut [u16; 64]) {
     }
 }
 
+#[target_feature(enable = "neon")]
 pub(super) fn idct8(coefs: &[[i32; 64]], out: &mut [[u16; 64]]) {
     for (c, o) in coefs.iter().zip(out.iter_mut()) {
         block(c, o);

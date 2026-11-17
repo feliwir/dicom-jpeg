@@ -9,6 +9,7 @@ use super::*;
 
 /// `(x + 2^(N-1)) >> N`.
 #[inline]
+#[target_feature(enable = "neon")]
 fn descale<const N: i32>(x: int32x4_t) -> int32x4_t {
     vshrq_n_s32::<N>(vaddq_s32(x, vdupq_n_s32(1 << (N - 1))))
 }
@@ -16,6 +17,7 @@ fn descale<const N: i32>(x: int32x4_t) -> int32x4_t {
 /// The 1-D forward DCT of `d` (each lane independently): outputs 0 and 4
 /// before their pass-specific scaling, the others before descaling.
 #[inline]
+#[target_feature(enable = "neon")]
 fn fdct_1d(d: &[int32x4_t; 8]) -> [int32x4_t; 8] {
     let add = |a, b| vaddq_s32(a, b);
     let sub = |a, b| vsubq_s32(a, b);
@@ -61,6 +63,7 @@ fn fdct_1d(d: &[int32x4_t; 8]) -> [int32x4_t; 8] {
 
 /// Transpose a 4 x 4 matrix of i32 held as 4 row vectors.
 #[inline]
+#[target_feature(enable = "neon")]
 fn transpose4(r: &[int32x4_t]) -> [int32x4_t; 4] {
     let t01 = vtrnq_s32(r[0], r[1]);
     let t23 = vtrnq_s32(r[2], r[3]);
@@ -75,6 +78,7 @@ fn transpose4(r: &[int32x4_t]) -> [int32x4_t; 4] {
 /// Transpose an 8 x 8 matrix given as the left (columns 0..4) and right
 /// (columns 4..8) halves of its rows; returns the transpose in that form.
 #[inline]
+#[target_feature(enable = "neon")]
 fn transpose(l: &[int32x4_t; 8], r: &[int32x4_t; 8]) -> ([int32x4_t; 8], [int32x4_t; 8]) {
     let (a, b, c, d) = (
         transpose4(&l[..4]),
@@ -89,6 +93,7 @@ fn transpose(l: &[int32x4_t; 8], r: &[int32x4_t; 8]) -> ([int32x4_t; 8], [int32x
 }
 
 #[inline]
+#[target_feature(enable = "neon")]
 fn pass1(t: &[int32x4_t; 8]) -> [int32x4_t; 8] {
     let o = fdct_1d(t);
     std::array::from_fn(|k| {
@@ -101,6 +106,7 @@ fn pass1(t: &[int32x4_t; 8]) -> [int32x4_t; 8] {
 }
 
 #[inline]
+#[target_feature(enable = "neon")]
 fn pass2(t: &[int32x4_t; 8]) -> [int32x4_t; 8] {
     let o = fdct_1d(t);
     std::array::from_fn(|k| {
@@ -114,6 +120,7 @@ fn pass2(t: &[int32x4_t; 8]) -> [int32x4_t; 8] {
 
 /// Quantise 4 coefficients with table entries `k..k + 4`.
 #[inline]
+#[target_feature(enable = "neon")]
 fn quantize(t: &QuantTable, k: usize, c: int32x4_t) -> int32x4_t {
     // SAFETY: `k + 4 <= 64`.
     let (d, half) = unsafe {
@@ -130,6 +137,7 @@ fn quantize(t: &QuantTable, k: usize, c: int32x4_t) -> int32x4_t {
     vmaxq_s32(vminq_s32(v, max), vnegq_s32(max))
 }
 
+#[target_feature(enable = "neon")]
 fn block(src: &[u16], stride: usize, t: &QuantTable, out: &mut [i32; 64]) {
     let center = vdupq_n_s32(128);
     let (mut l, mut r) = ([vdupq_n_s32(0); 8], [vdupq_n_s32(0); 8]);
@@ -150,6 +158,7 @@ fn block(src: &[u16], stride: usize, t: &QuantTable, out: &mut [i32; 64]) {
     }
 }
 
+#[target_feature(enable = "neon")]
 pub(super) fn fdct_quantize8(src: &[u16], stride: usize, t: &QuantTable, out: &mut [[i32; 64]]) {
     for (i, o) in out.iter_mut().enumerate() {
         block(&src[8 * i..], stride, t, o);

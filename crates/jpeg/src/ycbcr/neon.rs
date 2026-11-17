@@ -7,6 +7,7 @@ use super::*;
 
 /// One vector of 4 samples: (r, g, b) as i32, clamped.
 #[inline]
+#[target_feature(enable = "neon")]
 fn convert(
     y: int32x4_t,
     cb: int32x4_t,
@@ -27,6 +28,7 @@ fn convert(
     [clamp(r), clamp(g), clamp(b)]
 }
 
+#[target_feature(enable = "neon")]
 pub(super) fn ycbcr_to_rgb(
     y: &[u16],
     cb: &[u16],

@@ -3,6 +3,7 @@
 
 use std::arch::aarch64::*;
 
+#[target_feature(enable = "neon")]
 pub(super) fn interleave3_u8(a: &[u16], b: &[u16], c: &[u16], out: &mut [u8]) {
     let n = out.len() / 3 / 16 * 16;
     for i in (0..n).step_by(16) {
@@ -23,6 +24,7 @@ pub(super) fn interleave3_u8(a: &[u16], b: &[u16], c: &[u16], out: &mut [u8]) {
     super::scalar::interleave3_u8(&a[n..], &b[n..], &c[n..], &mut out[3 * n..]);
 }
 
+#[target_feature(enable = "neon")]
 pub(super) fn interleave3_u16(a: &[u16], b: &[u16], c: &[u16], out: &mut [u16]) {
     let n = out.len() / 3 / 8 * 8;
     for i in (0..n).step_by(8) {
@@ -40,6 +42,7 @@ pub(super) fn interleave3_u16(a: &[u16], b: &[u16], c: &[u16], out: &mut [u16]) 
     super::scalar::interleave3_u16(&a[n..], &b[n..], &c[n..], &mut out[3 * n..]);
 }
 
+#[target_feature(enable = "neon")]
 pub(super) fn deinterleave3_u8(src: &[u8], a: &mut [u16], b: &mut [u16], c: &mut [u16]) {
     let n = src.len() / 3 / 16 * 16;
     for i in (0..n).step_by(16) {
@@ -59,6 +62,7 @@ pub(super) fn deinterleave3_u8(src: &[u8], a: &mut [u16], b: &mut [u16], c: &mut
     super::scalar::deinterleave3_u8(&src[3 * n..], &mut a[n..], &mut b[n..], &mut c[n..]);
 }
 
+#[target_feature(enable = "neon")]
 pub(super) fn deinterleave3_u16(src: &[u16], a: &mut [u16], b: &mut [u16], c: &mut [u16]) {
     let n = src.len() / 3 / 8 * 8;
     for i in (0..n).step_by(8) {

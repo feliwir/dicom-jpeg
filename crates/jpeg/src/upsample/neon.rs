@@ -10,22 +10,26 @@ use super::scalar;
 const L: usize = 8;
 
 #[inline]
+#[target_feature(enable = "neon")]
 fn load(s: &[u16]) -> uint16x8_t {
     // SAFETY: callers pass slices of at least L samples.
     unsafe { vld1q_u16(s[..L].as_ptr()) }
 }
 
 #[inline]
+#[target_feature(enable = "neon")]
 fn store_pairs(d: &mut [u16], even: uint16x8_t, odd: uint16x8_t) {
     // SAFETY: `d` holds 2 * L samples.
     unsafe { vst2q_u16(d[..2 * L].as_mut_ptr(), uint16x8x2_t(even, odd)) }
 }
 
 #[inline]
+#[target_feature(enable = "neon")]
 fn times3(x: uint16x8_t) -> uint16x8_t {
     vaddq_u16(vaddq_u16(x, x), x)
 }
 
+#[target_feature(enable = "neon")]
 pub(super) fn h2v1(src: &[u16], dst: &mut [u16]) {
     let w = src.len();
     scalar::h2v1_edges(src, dst);
@@ -40,6 +44,7 @@ pub(super) fn h2v1(src: &[u16], dst: &mut [u16]) {
     scalar::h2v1_inner(&src[nv..], &mut dst[2 + 2 * nv..2 * w - 2]);
 }
 
+#[target_feature(enable = "neon")]
 pub(super) fn h2v2(near: &[u16], far: &[u16], dst: &mut [u16]) {
     let w = near.len();
     scalar::h2v2_edges(near, far, dst);
