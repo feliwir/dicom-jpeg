@@ -19,22 +19,41 @@ fn mirror(mut i: isize, len: usize) -> usize {
     }
 }
 
+/// A copy of the `w` x `h` plane with a mirrored border of `b` samples
+/// (row stride `w + 2b`).
+fn padded(plane: &[f32], w: usize, h: usize, b: usize) -> Vec<f32> {
+    let pw = w + 2 * b;
+    let cols: Vec<usize> = (0..pw)
+        .map(|x| mirror(x as isize - b as isize, w))
+        .collect();
+    let mut out = vec![0f32; pw * (h + 2 * b)];
+    for (py, dst) in out.chunks_exact_mut(pw).enumerate() {
+        let src = &plane[mirror(py as isize - b as isize, h) * w..][..w];
+        dst[b..b + w].copy_from_slice(src);
+        for x in (0..b).chain(b + w..pw) {
+            dst[x] = src[cols[x]];
+        }
+    }
+    out
+}
+
 /// Gaborish: a 3x3 convolution per channel with mirrored edges.
 pub(crate) fn gaborish(planes: &mut [Vec<f32>; 3], w: usize, h: usize, weights: [[f32; 2]; 3]) {
+    let pw = w + 2;
     for (c, plane) in planes.iter_mut().enumerate() {
         let [w0, w1] = weights[c];
         let norm = 1.0 / (1.0 + 4.0 * w0 + 4.0 * w1);
-        let src = plane.clone();
-        for y in 0..h {
-            let ym = mirror(y as isize - 1, h);
-            let yp = mirror(y as isize + 1, h);
-            for x in 0..w {
-                let xm = mirror(x as isize - 1, w);
-                let xp = mirror(x as isize + 1, w);
-                let p = |xx: usize, yy: usize| src[yy * w + xx];
-                let side = p(xm, y) + p(xp, y) + p(x, ym) + p(x, yp);
-                let diag = p(xm, ym) + p(xp, ym) + p(xm, yp) + p(xp, yp);
-                plane[y * w + x] = (p(x, y) + side * w0 + diag * w1) * norm;
+        let src = padded(plane, w, h, 1);
+        for (y, dst) in plane[..w * h].chunks_exact_mut(w).enumerate() {
+            let (up, mid, down) = (
+                &src[y * pw..][..pw],
+                &src[(y + 1) * pw..][..pw],
+                &src[(y + 2) * pw..][..pw],
+            );
+            for (x, d) in dst.iter_mut().enumerate() {
+                let side = mid[x] + mid[x + 2] + up[x + 1] + down[x + 1];
+                let diag = up[x] + up[x + 2] + down[x] + down[x + 2];
+                *d = (mid[x + 1] + side * w0 + diag * w1) * norm;
             }
         }
     }
@@ -59,56 +78,63 @@ const DIST_STEP0: [(isize, isize); 5] = [(0, -1), (1, 0), (0, 0), (-1, 0), (0, 1
 const DIST_STEP1: [(isize, isize); 5] = [(0, -1), (0, 0), (0, 1), (-1, 0), (1, 0)];
 const DIST_STEP2: [(isize, isize); 1] = [(0, 0)];
 
-fn epf_step(
-    planes: &[Vec<f32>; 3],
+/// Border of the padded planes: kernel reach (2) plus distance reach (1).
+const EPF_BORDER: usize = 3;
+
+/// One EPF step on `planes`, in place, with kernel taps `kernel` and the
+/// distance taps `dist` around each.
+#[allow(clippy::too_many_arguments)]
+fn epf_step<const K: usize, const D: usize>(
+    planes: &mut [Vec<f32>; 3],
     w: usize,
     h: usize,
     sigma: &[f32],
     sigma_stride: usize,
     params: &EpfParams,
-    step: usize,
-) -> [Vec<f32>; 3] {
-    type Offsets = &'static [(isize, isize)];
-    let (kernel, dist_off, step_mul): (Offsets, Offsets, f32) = match step {
-        0 => (&KERNEL_STEP0, &DIST_STEP0, params.pass0_sigma_scale),
-        1 => (&KERNEL_STEP12, &DIST_STEP1, 1.0),
-        _ => (&KERNEL_STEP12, &DIST_STEP2, params.pass2_sigma_scale),
-    };
-    let mut out: [Vec<f32>; 3] = std::array::from_fn(|_| vec![0f32; w * h]);
-    let at = |c: usize, x: isize, y: isize| planes[c][mirror(y, h) * w + mirror(x, w)];
+    step_mul: f32,
+    kernel: &[(isize, isize); K],
+    dist: &[(isize, isize); D],
+) {
+    const B: usize = EPF_BORDER;
+    let pw = w + 2 * B;
+    let src: [Vec<f32>; 3] = std::array::from_fn(|c| padded(&planes[c], w, h, B));
+    let off = |(dx, dy): (isize, isize)| dy * pw as isize + dx;
+    let kernel: [isize; K] = kernel.map(off);
+    let dist: [isize; D] = dist.map(off);
+    let scale = params.channel_scale;
+    let mul = [step_mul, step_mul * params.border_sad_mul];
+    let [p0, p1, p2] = planes;
+    let out = [&mut p0[..], &mut p1[..], &mut p2[..]];
     for y in 0..h {
         let y_border = (y + 1) & 0b110 == 0;
+        let sigma_row = &sigma[(y / 8) * sigma_stride..];
+        let row = (y + B) * pw + B;
         for x in 0..w {
-            let s = sigma[(y / 8) * sigma_stride + x / 8];
+            let s = sigma_row[x / 8];
             if s < 0.3 {
-                for c in 0..3 {
-                    out[c][y * w + x] = planes[c][y * w + x];
-                }
+                // Unfiltered: `out` already holds the input.
                 continue;
             }
-            let x_border = matches!(x & 7, 0 | 7);
-            let sm = if y_border || x_border {
-                step_mul * params.border_sad_mul
-            } else {
-                step_mul
-            };
-            let neg_inv_sigma = 6.6 * (std::f32::consts::FRAC_1_SQRT_2 - 1.0) / s * sm;
-            let (xi, yi) = (x as isize, y as isize);
+            let border = y_border || matches!(x & 7, 0 | 7);
+            let neg_inv_sigma =
+                6.6 * (std::f32::consts::FRAC_1_SQRT_2 - 1.0) / s * mul[border as usize];
+            let i = (row + x) as isize;
+            let at = |c: usize, o: isize| src[c][(i + o) as usize];
             let mut sum_w = 1.0f32;
-            let mut sums: [f32; 3] = std::array::from_fn(|c| planes[c][y * w + x]);
-            for &(kx, ky) in kernel {
-                let mut dist = 0f32;
-                for (c, &scale) in params.channel_scale.iter().enumerate() {
+            let mut sums: [f32; 3] = std::array::from_fn(|c| at(c, 0));
+            for &k in &kernel {
+                let mut d = 0f32;
+                for (c, &sc) in scale.iter().enumerate() {
                     let mut acc = 0f32;
-                    for &(ox, oy) in dist_off {
-                        acc += (at(c, xi + kx + ox, yi + ky + oy) - at(c, xi + ox, yi + oy)).abs();
+                    for &o in &dist {
+                        acc += (at(c, k + o) - at(c, o)).abs();
                     }
-                    dist += scale * acc;
+                    d += sc * acc;
                 }
-                let weight = (1.0 + dist * neg_inv_sigma).max(0.0);
+                let weight = (1.0 + d * neg_inv_sigma).max(0.0);
                 sum_w += weight;
                 for (c, sum) in sums.iter_mut().enumerate() {
-                    *sum += weight * at(c, xi + kx, yi + ky);
+                    *sum += weight * at(c, k);
                 }
             }
             for c in 0..3 {
@@ -116,7 +142,6 @@ fn epf_step(
             }
         }
     }
-    out
 }
 
 /// Edge-preserving filter with a per-8x8-block sigma map.
@@ -129,14 +154,47 @@ pub(crate) fn epf(
     fh: &FrameHeader,
 ) {
     let iters = fh.epf_iters;
+    let p = &fh.epf;
     if iters == 3 {
-        *planes = epf_step(planes, w, h, sigma, sigma_stride, &fh.epf, 0);
+        let mul = p.pass0_sigma_scale;
+        epf_step(
+            planes,
+            w,
+            h,
+            sigma,
+            sigma_stride,
+            p,
+            mul,
+            &KERNEL_STEP0,
+            &DIST_STEP0,
+        );
     }
     if iters >= 1 {
-        *planes = epf_step(planes, w, h, sigma, sigma_stride, &fh.epf, 1);
+        epf_step(
+            planes,
+            w,
+            h,
+            sigma,
+            sigma_stride,
+            p,
+            1.0,
+            &KERNEL_STEP12,
+            &DIST_STEP1,
+        );
     }
     if iters >= 2 {
-        *planes = epf_step(planes, w, h, sigma, sigma_stride, &fh.epf, 2);
+        let mul = p.pass2_sigma_scale;
+        epf_step(
+            planes,
+            w,
+            h,
+            sigma,
+            sigma_stride,
+            p,
+            mul,
+            &KERNEL_STEP12,
+            &DIST_STEP2,
+        );
     }
 }
 
