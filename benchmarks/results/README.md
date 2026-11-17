@@ -13,16 +13,16 @@ see [../README.md](../README.md) for the method and inputs.
 | Decode · JPLL lossless | **dicom-jpeg** | 380.9 |  |
 | Decode · JPLL lossless | libjpeg-turbo | 285.9 |  |
 | Decode · JPLL lossless | jpeg-decoder | 129.6 |  |
-| Decode · JPLY 12-bit | **dicom-jpeg** | 588.7 |  |
-| Decode · JPLY 12-bit | libjpeg-turbo | 692.9 |  |
+| Decode · JPLY 12-bit | **dicom-jpeg** | 997.4 |  |
+| Decode · JPLY 12-bit | libjpeg-turbo | 674.4 |  |
 | Decode · REF 8-bit q90 (libjpeg-turbo) | **dicom-jpeg** | 459.5 |  |
 | Decode · REF 8-bit q90 (libjpeg-turbo) | libjpeg-turbo | 539.5 |  |
 | Decode · REF 8-bit q90 (libjpeg-turbo) | zune-jpeg | 460.7 |  |
 | Decode · REF 8-bit q90 (libjpeg-turbo) | jpeg-decoder | 261.8 |  |
 | Encode · baseline q90 8-bit | **dicom-jpeg** | 311.5 | 12.71 |
 | Encode · baseline q90 8-bit | libjpeg-turbo | 228.3 | 12.71 |
-| Encode · extended q90 12-bit | **dicom-jpeg** | 178.7 | 9.10 |
-| Encode · extended q90 12-bit | libjpeg-turbo | 137.9 | 9.10 |
+| Encode · extended q90 12-bit | **dicom-jpeg** | 391.0 | 9.10 |
+| Encode · extended q90 12-bit | libjpeg-turbo | 136.6 | 9.10 |
 | Encode · lossless SV1 | **dicom-jpeg** | 111.4 | 2.96 |
 | Encode · lossless SV1 | libjpeg-turbo | 58.5 | 2.96 |
 
