@@ -99,21 +99,45 @@ fn ceil_log2(x: u32) -> u32 {
 /// A prefix code ready for writing symbols.
 struct PrefixEnc {
     lengths: Vec<u8>,
-    codes: Vec<u32>,
+    /// Canonical codes, bit-reversed: the stream is MSB first per code and
+    /// the writer LSB first.
+    rev_codes: Vec<u32>,
     /// Single used symbol: coded with zero bits.
     single: bool,
 }
 
 impl PrefixEnc {
+    fn new(lengths: Vec<u8>, single: bool) -> Self {
+        let rev_codes = if single {
+            vec![0; lengths.len()]
+        } else {
+            canonical_codes(&lengths)
+                .iter()
+                .zip(&lengths)
+                .map(|(&c, &l)| {
+                    if l == 0 {
+                        0
+                    } else {
+                        c.reverse_bits() >> (32 - l as u32)
+                    }
+                })
+                .collect()
+        };
+        PrefixEnc {
+            lengths,
+            rev_codes,
+            single,
+        }
+    }
+
+    #[inline]
     fn write_symbol(&self, w: &mut BitWriter, s: u32) {
         if self.single {
             return;
         }
-        let (len, code) = (self.lengths[s as usize] as u32, self.codes[s as usize]);
+        let len = self.lengths[s as usize] as u32;
         debug_assert!(len > 0, "symbol without a code");
-        // Stream order is MSB first.
-        let rev = code.reverse_bits() >> (32 - len);
-        w.write(len, rev as u64);
+        w.write(len, self.rev_codes[s as usize] as u64);
     }
 }
 
@@ -157,21 +181,12 @@ fn write_prefix_code(w: &mut BitWriter, freq: &[u64]) -> PrefixEnc {
             w.bool(lens[0] == 1);
         }
         if syms.len() == 1 {
-            return PrefixEnc {
-                lengths,
-                codes: vec![0; freq.len()],
-                single: true,
-            };
+            return PrefixEnc::new(lengths, true);
         }
         for (k, &s) in syms.iter().enumerate() {
             lengths[s] = lens[k];
         }
-        let codes = canonical_codes(&lengths);
-        return PrefixEnc {
-            lengths,
-            codes,
-            single: false,
-        };
+        return PrefixEnc::new(lengths, false);
     }
 
     let lengths = huffman_lengths(freq, 15);
@@ -210,21 +225,11 @@ fn write_prefix_code(w: &mut BitWriter, freq: &[u64]) -> PrefixEnc {
         }
     }
     let _ = written;
-    let cl_codes = canonical_codes(&cl_lengths);
-    let cl = PrefixEnc {
-        lengths: cl_lengths,
-        codes: cl_codes,
-        single: cl_used == 1,
-    };
+    let cl = PrefixEnc::new(cl_lengths, cl_used == 1);
     for &l in &lengths[..last] {
         cl.write_symbol(w, l as u32);
     }
-    let codes = canonical_codes(&lengths);
-    PrefixEnc {
-        lengths,
-        codes,
-        single: false,
-    }
+    PrefixEnc::new(lengths, false)
 }
 
 // ---------------------------------------------------------------------------
@@ -254,10 +259,14 @@ pub(crate) struct EntropyCode {
 impl EntropyCode {
     /// Build and write the histograms for `num_contexts` contexts from the
     /// (context, value) symbols of all streams that will use the code.
-    pub(crate) fn write(w: &mut BitWriter, num_contexts: usize, symbols: &[(u32, u32)]) -> Self {
+    pub(crate) fn write(
+        w: &mut BitWriter,
+        num_contexts: usize,
+        symbols: impl IntoIterator<Item = (u32, u32)>,
+    ) -> Self {
         // Token histograms per context.
         let mut hist: Vec<Vec<u64>> = vec![Vec::new(); num_contexts];
-        for &(ctx, v) in symbols {
+        for (ctx, v) in symbols {
             let (t, _, _) = tokenize(v);
             let h = &mut hist[ctx as usize];
             if h.len() <= t as usize {
@@ -329,11 +338,7 @@ impl EntropyCode {
             .map(|c| {
                 if c.len() <= 1 {
                     // Alphabet of one symbol: nothing is written.
-                    PrefixEnc {
-                        lengths: vec![0],
-                        codes: vec![0],
-                        single: true,
-                    }
+                    PrefixEnc::new(vec![0], true)
                 } else {
                     write_prefix_code(w, c)
                 }
@@ -364,7 +369,7 @@ fn write_context_map(w: &mut BitWriter, map: &[u8], num_clusters: usize) {
         w.bool(false);
         w.bool(false); // no MTF
         let symbols: Vec<(u32, u32)> = map.iter().map(|&m| (0, m as u32)).collect();
-        let code = EntropyCode::write(w, 1, &symbols);
+        let code = EntropyCode::write(w, 1, symbols.iter().copied());
         for &(c, v) in &symbols {
             code.write_symbol(w, c, v);
         }
@@ -660,13 +665,10 @@ pub fn encode_lossless(image: &Image) -> Result<Encoded> {
             let (w, h) = (GROUP.min(width - x0), GROUP.min(height - y0));
             let mut s = Vec::new();
             for (c, p) in planes.iter().enumerate() {
-                let region: Vec<i32> = (0..h)
-                    .flat_map(|y| {
-                        p[(y0 + y) * width + x0..(y0 + y) * width + x0 + w]
-                            .iter()
-                            .copied()
-                    })
-                    .collect();
+                let mut region: Vec<i32> = Vec::with_capacity(w * h);
+                for y in y0..y0 + h {
+                    region.extend_from_slice(&p[y * width + x0..][..w]);
+                }
                 encode_plane(&region, w, h, c, &t, &leaf_of, &mut s);
             }
             streams.push(s);
@@ -677,12 +679,11 @@ pub fn encode_lossless(image: &Image) -> Result<Encoded> {
     let mut lf = BitWriter::default();
     lf.bool(true); // LfChannelDequantization.all_default
     lf.bool(true); // global tree present
-    let tree_code = EntropyCode::write(&mut lf, 6, &tree_syms);
+    let tree_code = EntropyCode::write(&mut lf, 6, tree_syms.iter().copied());
     for &(c, v) in &tree_syms {
         tree_code.write_symbol(&mut lf, c, v);
     }
-    let all: Vec<(u32, u32)> = streams.iter().flatten().copied().collect();
-    let code = EntropyCode::write(&mut lf, num_leaves, &all);
+    let code = EntropyCode::write(&mut lf, num_leaves, streams.iter().flatten().copied());
     let write_group_header = |w: &mut BitWriter, transforms: bool| {
         w.bool(true); // use_global_tree
         w.bool(true); // default weighted predictor parameters
