@@ -32,59 +32,59 @@
 <text x="136.0" y="96.0" class="sub" text-anchor="start">reference implementations</text>
 <text x="16.0" y="125.0" class="group" text-anchor="start">Decode · JPLL lossless</text>
 <text x="190.0" y="151.0" class="name ours" text-anchor="end">dicom-jpeg</text>
-<path class="ours-fill" d="M200.0,139.0 h169.2 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-169.2 z"><title>dicom-jpeg: 119.4</title></path>
-<text x="381.2" y="151.0" class="value ours" text-anchor="start">119.4</text>
+<path class="ours-fill" d="M200.0,139.0 h167.8 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-167.8 z"><title>dicom-jpeg: 119.0</title></path>
+<text x="379.8" y="151.0" class="value ours" text-anchor="start">119.0</text>
 <text x="190.0" y="177.0" class="name" text-anchor="end">libjpeg-turbo</text>
-<path class="ref-fill" d="M200.0,165.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>libjpeg-turbo: 286.8</title></path>
-<text x="624.0" y="177.0" class="value" text-anchor="start">286.8</text>
+<path class="ref-fill" d="M200.0,165.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>libjpeg-turbo: 288.1</title></path>
+<text x="624.0" y="177.0" class="value" text-anchor="start">288.1</text>
 <text x="190.0" y="203.0" class="name" text-anchor="end">jpeg-decoder</text>
-<path class="ref-fill" d="M200.0,191.0 h183.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-183.0 z"><title>jpeg-decoder: 128.9</title></path>
-<text x="395.0" y="203.0" class="value" text-anchor="start">128.9</text>
+<path class="ref-fill" d="M200.0,191.0 h175.1 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-175.1 z"><title>jpeg-decoder: 124.1</title></path>
+<text x="387.1" y="203.0" class="value" text-anchor="start">124.1</text>
 <line class="axis" x1="200" y1="134" x2="200" y2="212"/>
 <text x="16.0" y="233.0" class="group" text-anchor="start">Decode · JPLY 12-bit</text>
 <text x="190.0" y="259.0" class="name ours" text-anchor="end">dicom-jpeg</text>
-<path class="ours-fill" d="M200.0,247.0 h350.5 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-350.5 z"><title>dicom-jpeg: 585.1</title></path>
-<text x="562.5" y="259.0" class="value ours" text-anchor="start">585.1</text>
+<path class="ours-fill" d="M200.0,247.0 h351.2 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-351.2 z"><title>dicom-jpeg: 583.2</title></path>
+<text x="563.2" y="259.0" class="value ours" text-anchor="start">583.2</text>
 <text x="190.0" y="285.0" class="name" text-anchor="end">libjpeg-turbo</text>
-<path class="ref-fill" d="M200.0,273.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>libjpeg-turbo: 686.6</title></path>
-<text x="624.0" y="285.0" class="value" text-anchor="start">686.6</text>
+<path class="ref-fill" d="M200.0,273.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>libjpeg-turbo: 682.9</title></path>
+<text x="624.0" y="285.0" class="value" text-anchor="start">682.9</text>
 <line class="axis" x1="200" y1="242" x2="200" y2="294"/>
 <text x="16.0" y="315.0" class="group" text-anchor="start">Decode · REF 8-bit q90 (libjpeg-turbo)</text>
 <text x="190.0" y="341.0" class="name ours" text-anchor="end">dicom-jpeg</text>
-<path class="ours-fill" d="M200.0,329.0 h360.3 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-360.3 z"><title>dicom-jpeg: 461.2</title></path>
-<text x="572.3" y="341.0" class="value ours" text-anchor="start">461.2</text>
+<path class="ours-fill" d="M200.0,329.0 h356.5 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-356.5 z"><title>dicom-jpeg: 459.8</title></path>
+<text x="568.5" y="341.0" class="value ours" text-anchor="start">459.8</text>
 <text x="190.0" y="367.0" class="name" text-anchor="end">libjpeg-turbo</text>
-<path class="ref-fill" d="M200.0,355.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>libjpeg-turbo: 526.7</title></path>
-<text x="624.0" y="367.0" class="value" text-anchor="start">526.7</text>
+<path class="ref-fill" d="M200.0,355.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>libjpeg-turbo: 530.6</title></path>
+<text x="624.0" y="367.0" class="value" text-anchor="start">530.6</text>
 <text x="190.0" y="393.0" class="name" text-anchor="end">zune-jpeg</text>
-<path class="ref-fill" d="M200.0,381.0 h363.2 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-363.2 z"><title>zune-jpeg: 465.0</title></path>
-<text x="575.2" y="393.0" class="value" text-anchor="start">465.0</text>
+<path class="ref-fill" d="M200.0,381.0 h355.2 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-355.2 z"><title>zune-jpeg: 458.2</title></path>
+<text x="567.2" y="393.0" class="value" text-anchor="start">458.2</text>
 <text x="190.0" y="419.0" class="name" text-anchor="end">jpeg-decoder</text>
-<path class="ref-fill" d="M200.0,407.0 h203.9 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-203.9 z"><title>jpeg-decoder: 263.2</title></path>
-<text x="415.9" y="419.0" class="value" text-anchor="start">263.2</text>
+<path class="ref-fill" d="M200.0,407.0 h188.2 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-188.2 z"><title>jpeg-decoder: 245.1</title></path>
+<text x="400.2" y="419.0" class="value" text-anchor="start">245.1</text>
 <line class="axis" x1="200" y1="324" x2="200" y2="428"/>
 <text x="16.0" y="449.0" class="group" text-anchor="start">Encode · baseline q90 8-bit</text>
 <text x="190.0" y="475.0" class="name ours" text-anchor="end">dicom-jpeg</text>
-<path class="ours-fill" d="M200.0,463.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>dicom-jpeg: 313.6 · ratio 12.71</title></path>
-<text x="624.0" y="475.0" class="value ours" text-anchor="start">313.6 · ratio 12.71</text>
+<path class="ours-fill" d="M200.0,463.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>dicom-jpeg: 313.1 · ratio 12.71</title></path>
+<text x="624.0" y="475.0" class="value ours" text-anchor="start">313.1 · ratio 12.71</text>
 <text x="190.0" y="501.0" class="name" text-anchor="end">libjpeg-turbo</text>
-<path class="ref-fill" d="M200.0,489.0 h298.8 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-298.8 z"><title>libjpeg-turbo: 228.2 · ratio 12.71</title></path>
-<text x="510.8" y="501.0" class="value" text-anchor="start">228.2 · ratio 12.71</text>
+<path class="ref-fill" d="M200.0,489.0 h299.2 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-299.2 z"><title>libjpeg-turbo: 228.2 · ratio 12.71</title></path>
+<text x="511.2" y="501.0" class="value" text-anchor="start">228.2 · ratio 12.71</text>
 <line class="axis" x1="200" y1="458" x2="200" y2="510"/>
 <text x="16.0" y="531.0" class="group" text-anchor="start">Encode · extended q90 12-bit</text>
 <text x="190.0" y="557.0" class="name ours" text-anchor="end">dicom-jpeg</text>
-<path class="ours-fill" d="M200.0,545.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>dicom-jpeg: 181.1 · ratio 9.10</title></path>
-<text x="624.0" y="557.0" class="value ours" text-anchor="start">181.1 · ratio 9.10</text>
+<path class="ours-fill" d="M200.0,545.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>dicom-jpeg: 182.8 · ratio 9.10</title></path>
+<text x="624.0" y="557.0" class="value ours" text-anchor="start">182.8 · ratio 9.10</text>
 <text x="190.0" y="583.0" class="name" text-anchor="end">libjpeg-turbo</text>
-<path class="ref-fill" d="M200.0,571.0 h312.7 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-312.7 z"><title>libjpeg-turbo: 137.9 · ratio 9.10</title></path>
-<text x="524.7" y="583.0" class="value" text-anchor="start">137.9 · ratio 9.10</text>
+<path class="ref-fill" d="M200.0,571.0 h313.6 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-313.6 z"><title>libjpeg-turbo: 139.6 · ratio 9.10</title></path>
+<text x="525.6" y="583.0" class="value" text-anchor="start">139.6 · ratio 9.10</text>
 <line class="axis" x1="200" y1="540" x2="200" y2="592"/>
 <text x="16.0" y="613.0" class="group" text-anchor="start">Encode · lossless SV1</text>
 <text x="190.0" y="639.0" class="name ours" text-anchor="end">dicom-jpeg</text>
-<path class="ours-fill" d="M200.0,627.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>dicom-jpeg: 111.2 · ratio 2.96</title></path>
-<text x="624.0" y="639.0" class="value ours" text-anchor="start">111.2 · ratio 2.96</text>
+<path class="ours-fill" d="M200.0,627.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>dicom-jpeg: 111.5 · ratio 2.96</title></path>
+<text x="624.0" y="639.0" class="value ours" text-anchor="start">111.5 · ratio 2.96</text>
 <text x="190.0" y="665.0" class="name" text-anchor="end">libjpeg-turbo</text>
-<path class="ref-fill" d="M200.0,653.0 h204.1 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-204.1 z"><title>libjpeg-turbo: 55.6 · ratio 2.96</title></path>
-<text x="416.1" y="665.0" class="value" text-anchor="start">55.6 · ratio 2.96</text>
+<path class="ref-fill" d="M200.0,653.0 h209.4 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-209.4 z"><title>libjpeg-turbo: 57.2 · ratio 2.96</title></path>
+<text x="421.4" y="665.0" class="value" text-anchor="start">57.2 · ratio 2.96</text>
 <line class="axis" x1="200" y1="622" x2="200" y2="674"/>
 </svg>
