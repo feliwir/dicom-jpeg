@@ -165,3 +165,12 @@ pub(super) fn idct8(coefs: &[[i32; 64]], out: &mut [[u16; 64]]) {
         block(c, o);
     }
 }
+
+/// 12-bit IDCT: the scalar code. libjpeg's 12-bit transform needs 64-bit
+/// arithmetic, and NEON has no 64-bit multiply; with an exact emulation
+/// (two 32 x 32 -> 64-bit multiplies per product) the vector version was no
+/// faster than the scalar one, which skips all-zero rows and columns.
+#[target_feature(enable = "neon")]
+pub(super) fn idct12(coefs: &[[i32; 64]], out: &mut [[u16; 64]]) {
+    super::scalar::idct12(coefs, out);
+}

@@ -176,3 +176,10 @@ pub(super) fn fdct_quantize8(src: &[u16], stride: usize, t: &QuantTable, out: &m
         block(&src[8 * i..], stride, t, o);
     }
 }
+
+/// 12-bit: the scalar transform and quantisation (it needs 64-bit
+/// arithmetic, see `idct::sse41`).
+#[target_feature(enable = "sse4.1")]
+pub(super) fn fdct_quantize12(src: &[u16], stride: usize, t: &QuantTable, out: &mut [[i32; 64]]) {
+    super::scalar::fdct_quantize12(src, stride, t, out);
+}

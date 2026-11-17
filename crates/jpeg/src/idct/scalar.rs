@@ -127,6 +127,13 @@ pub(super) fn idct8(coefs: &[[i32; 64]], out: &mut [[u16; 64]]) {
     }
 }
 
+/// 12-bit IDCT of each block into the matching 8 x 8 output block.
+pub(super) fn idct12(coefs: &[[i32; 64]], out: &mut [[u16; 64]]) {
+    for (c, o) in coefs.iter().zip(out.iter_mut()) {
+        idct_i64(c, 1, 2048, 4095, o, 8);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

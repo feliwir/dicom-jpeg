@@ -98,6 +98,14 @@ pub(super) fn fdct_quantize8(src: &[u16], stride: usize, t: &QuantTable, out: &m
     }
 }
 
+/// As [`fdct_quantize8`] for 12-bit samples.
+pub(super) fn fdct_quantize12(src: &[u16], stride: usize, t: &QuantTable, out: &mut [[i32; 64]]) {
+    for (i, o) in out.iter_mut().enumerate() {
+        fdct_i64(&src[8 * i..], stride, 12, o);
+        quantize(t, o);
+    }
+}
+
 /// Quantise `c` (natural order) in place.
 pub(super) fn quantize(t: &QuantTable, c: &mut [i32; 64]) {
     for (v, d) in c.iter_mut().zip(&t.div) {

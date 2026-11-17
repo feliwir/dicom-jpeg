@@ -107,7 +107,7 @@ fn transpose(r: &[__m256i; 8]) -> [__m256i; 8] {
 /// Quantise one row of coefficients (row `r` of the table).
 #[inline]
 #[target_feature(enable = "avx2")]
-fn quantize(t: &QuantTable, r: usize, c: __m256i) -> __m256i {
+pub(super) fn quantize(t: &QuantTable, r: usize, c: __m256i) -> __m256i {
     // SAFETY: rows of the 64-entry tables hold 8 values.
     let (d, half) = unsafe {
         (
@@ -165,4 +165,11 @@ pub(super) fn fdct_quantize8(src: &[u16], stride: usize, t: &QuantTable, out: &m
     for (i, o) in out.iter_mut().enumerate() {
         block(&src[8 * i..], stride, t, o);
     }
+}
+
+/// 12-bit: the scalar transform and quantisation. libjpeg's 12-bit
+/// transform needs 64-bit arithmetic, which AVX2 lacks (see `idct::avx2`).
+#[target_feature(enable = "avx2,fma")]
+pub(super) fn fdct_quantize12(src: &[u16], stride: usize, t: &QuantTable, out: &mut [[i32; 64]]) {
+    super::scalar::fdct_quantize12(src, stride, t, out);
 }

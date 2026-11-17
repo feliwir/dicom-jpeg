@@ -107,6 +107,9 @@ pub fn fdct_quantize(
         // The last row of the last block.
         assert!(src.len() >= 7 * stride + 8 * n + 8);
     }
+    if precision == 12 {
+        return dispatch!(level => fdct_quantize12(src, stride, t, out));
+    }
     if precision > 8 {
         for (i, o) in out.iter_mut().enumerate() {
             scalar::fdct_block(&src[8 * i..], stride, precision, o);
@@ -131,29 +134,34 @@ mod tests {
             seed
         };
         let (bw, stride) = (13usize, 13 * 8 + 5);
-        let mut samples = vec![0u16; 8 * stride];
-        for (i, s) in samples.iter_mut().enumerate() {
-            *s = match (i / 64) % 4 {
-                0 => (rnd() % 256) as u16,
-                1 => [0, 255][(i + i / stride) % 2],
-                2 => 255,
-                _ => (i % 256) as u16,
-            };
-        }
+        let samples = |precision: u8, rnd: &mut dyn FnMut() -> u32| -> Vec<u16> {
+            let max = (1u32 << precision) - 1;
+            (0..8 * stride)
+                .map(|i| match (i / 64) % 4 {
+                    0 => (rnd() % (max + 1)) as u16,
+                    1 => [0, max as u16][(i + i / stride) % 2],
+                    2 => max as u16,
+                    _ => (i as u32 % (max + 1)) as u16,
+                })
+                .collect()
+        };
         let tables = [
             QuantTable::new(&[1; 64], 1023),
             QuantTable::new(&std::array::from_fn(|k| 1 + (k as u16 * 37) % 255), 1023),
             QuantTable::new(&std::array::from_fn(|_| 1 + (rnd() as u16)), 16383),
             QuantTable::new(&[2; 64], 30),
         ];
-        for t in &tables {
-            let mut want = vec![[0i32; 64]; bw];
-            fdct_quantize(Level::Scalar, &samples, stride, 8, t, &mut want);
-            for level in Level::supported() {
-                for n in [bw, bw - 1, 1] {
-                    let mut got = vec![[0i32; 64]; n];
-                    fdct_quantize(level, &samples, stride, 8, t, &mut got);
-                    assert_eq!(got, want[..n], "{level:?} {n} blocks");
+        for precision in [8u8, 12] {
+            let samples = samples(precision, &mut rnd);
+            for t in &tables {
+                let mut want = vec![[0i32; 64]; bw];
+                fdct_quantize(Level::Scalar, &samples, stride, precision, t, &mut want);
+                for level in Level::supported() {
+                    for n in [bw, bw - 1, 1] {
+                        let mut got = vec![[0i32; 64]; n];
+                        fdct_quantize(level, &samples, stride, precision, t, &mut got);
+                        assert_eq!(got, want[..n], "{precision}-bit {level:?} {n} blocks");
+                    }
                 }
             }
         }
@@ -161,11 +169,12 @@ mod tests {
 
     #[test]
     fn float_quotient_is_exact() {
-        // Exhaustive over the 8-bit coefficient range for a few divisors.
+        // Exhaustive over the 12-bit coefficient range (8-bit is within it)
+        // for a few divisors.
         for q in [1u16, 2, 3, 7, 10, 99, 255, 1000, 65535] {
             let d = Divisor::new(q as u32 * 8);
             let df = (q as u32 * 8) as f32;
-            for c in -(1i32 << 15)..(1 << 15) {
+            for c in -(1i32 << 18)..(1 << 18) {
                 let a = c.unsigned_abs() + d.half;
                 let v = (a as f32 / df) as i32;
                 assert_eq!(if c < 0 { -v } else { v }, d.quantize(c), "q {q} c {c}");

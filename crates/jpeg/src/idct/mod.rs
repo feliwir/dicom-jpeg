@@ -6,10 +6,11 @@
 //! transformed in 32-bit and 12-bit data in 64-bit arithmetic; valid data
 //! never overflows, and corrupt coefficients wrap instead of panicking.
 //!
-//! The 8-bit transform has SIMD versions, which compute every column and
-//! row in full and select libjpeg's shortcut results per lane, so they wrap
-//! exactly like the scalar code. 12-bit data stays scalar (it needs 64-bit
-//! multiplies).
+//! The 8-bit transform has SIMD versions, and the 12-bit one an AVX-512
+//! version in 64-bit lanes; they compute every column and row in full and
+//! select libjpeg's shortcut results per lane, so they wrap exactly like the
+//! scalar code. Other levels run the scalar 12-bit transform (see
+//! `sse41::idct12`).
 
 use dicom_jpeg_common::dispatch;
 use dicom_jpeg_common::simd::Level;
@@ -51,6 +52,9 @@ pub(crate) fn idct_block(coef: &[i32; 64], precision: u8, out: &mut [u16], strid
 /// same index, with the implementation for `level`.
 pub fn idct_blocks(level: Level, coefs: &[[i32; 64]], precision: u8, out: &mut [[u16; 64]]) {
     assert_eq!(coefs.len(), out.len());
+    if precision == 12 {
+        return dispatch!(level => idct12(coefs, out));
+    }
     if precision > 8 {
         for (c, o) in coefs.iter().zip(out.iter_mut()) {
             scalar::idct_block(c, precision, o, 8);
@@ -105,15 +109,17 @@ mod tests {
     #[test]
     fn simd_matches_scalar() {
         let coefs = blocks();
-        let mut want = vec![[0u16; 64]; coefs.len()];
-        idct_blocks(Level::Scalar, &coefs, 8, &mut want);
-        for level in Level::supported() {
-            // Odd and even batch lengths.
-            for len in [coefs.len(), coefs.len() - 1, 1] {
-                let mut got = vec![[0u16; 64]; len];
-                idct_blocks(level, &coefs[..len], 8, &mut got);
-                for (i, (g, w)) in got.iter().zip(&want).enumerate() {
-                    assert_eq!(g, w, "{level:?}, block {i}: {:?}", coefs[i]);
+        for precision in [8u8, 12] {
+            let mut want = vec![[0u16; 64]; coefs.len()];
+            idct_blocks(Level::Scalar, &coefs, precision, &mut want);
+            for level in Level::supported() {
+                // Odd and even batch lengths.
+                for len in [coefs.len(), coefs.len() - 1, 1] {
+                    let mut got = vec![[0u16; 64]; len];
+                    idct_blocks(level, &coefs[..len], precision, &mut got);
+                    for (i, (g, w)) in got.iter().zip(&want).enumerate() {
+                        assert_eq!(g, w, "{precision}-bit {level:?}, block {i}: {:?}", coefs[i]);
+                    }
                 }
             }
         }

@@ -182,3 +182,159 @@ pub(super) fn fdct_quantize8(src: &[u16], stride: usize, t: &QuantTable, out: &m
         super::avx2::block(&src[8 * n..], stride, t, o);
     }
 }
+
+// ---------------------------------------------------------------------------
+// 12-bit: the same transform in 64-bit lanes (vpmullq / vpsraq), one block
+// row of eight i64 per vector, then the 32-bit quantisation of `avx2.rs`.
+
+mod wide {
+    use std::arch::x86_64::*;
+
+    use super::super::*;
+
+    /// `(x + 2^(N-1)) >> N` (arithmetic).
+    #[inline]
+    #[target_feature(enable = "avx512f")]
+    fn descale<const N: u32>(x: __m512i) -> __m512i {
+        _mm512_srai_epi64::<N>(_mm512_add_epi64(x, _mm512_set1_epi64(1 << (N - 1))))
+    }
+
+    /// The 1-D forward DCT in 64-bit lanes: outputs 0 and 4 before their
+    /// pass-specific scaling, the others before descaling.
+    #[inline]
+    #[target_feature(enable = "avx512f,avx512dq")]
+    fn fdct_1d(d: &[__m512i; 8]) -> [__m512i; 8] {
+        let add = |a, b| _mm512_add_epi64(a, b);
+        let sub = |a, b| _mm512_sub_epi64(a, b);
+        let tmp0 = add(d[0], d[7]);
+        let tmp7 = sub(d[0], d[7]);
+        let tmp1 = add(d[1], d[6]);
+        let tmp6 = sub(d[1], d[6]);
+        let tmp2 = add(d[2], d[5]);
+        let tmp5 = sub(d[2], d[5]);
+        let tmp3 = add(d[3], d[4]);
+        let tmp4 = sub(d[3], d[4]);
+        let tmp10 = add(tmp0, tmp3);
+        let tmp13 = sub(tmp0, tmp3);
+        let tmp11 = add(tmp1, tmp2);
+        let tmp12 = sub(tmp1, tmp2);
+        let z1 = _mm512_mullo_epi64(add(tmp12, tmp13), _mm512_set1_epi64(FIX_0_541196100 as i64));
+        let o2 = add(
+            z1,
+            _mm512_mullo_epi64(tmp13, _mm512_set1_epi64(FIX_0_765366865 as i64)),
+        );
+        let o6 = add(
+            z1,
+            _mm512_mullo_epi64(tmp12, _mm512_set1_epi64(-FIX_1_847759065 as i64)),
+        );
+        let z1 = add(tmp4, tmp7);
+        let z2 = add(tmp5, tmp6);
+        let z3 = add(tmp4, tmp6);
+        let z4 = add(tmp5, tmp7);
+        let z5 = _mm512_mullo_epi64(add(z3, z4), _mm512_set1_epi64(FIX_1_175875602 as i64));
+        let t4 = _mm512_mullo_epi64(tmp4, _mm512_set1_epi64(FIX_0_298631336 as i64));
+        let t5 = _mm512_mullo_epi64(tmp5, _mm512_set1_epi64(FIX_2_053119869 as i64));
+        let t6 = _mm512_mullo_epi64(tmp6, _mm512_set1_epi64(FIX_3_072711026 as i64));
+        let t7 = _mm512_mullo_epi64(tmp7, _mm512_set1_epi64(FIX_1_501321110 as i64));
+        let z1 = _mm512_mullo_epi64(z1, _mm512_set1_epi64(-FIX_0_899976223 as i64));
+        let z2 = _mm512_mullo_epi64(z2, _mm512_set1_epi64(-FIX_2_562915447 as i64));
+        let z3 = add(
+            _mm512_mullo_epi64(z3, _mm512_set1_epi64(-FIX_1_961570560 as i64)),
+            z5,
+        );
+        let z4 = add(
+            _mm512_mullo_epi64(z4, _mm512_set1_epi64(-FIX_0_390180644 as i64)),
+            z5,
+        );
+        [
+            add(tmp10, tmp11),
+            add(add(t7, z1), z4),
+            o2,
+            add(add(t6, z2), z3),
+            sub(tmp10, tmp11),
+            add(add(t5, z2), z4),
+            o6,
+            add(add(t4, z1), z3),
+        ]
+    }
+
+    /// Transpose an 8 x 8 matrix of i64 held as 8 row vectors.
+    #[inline]
+    #[target_feature(enable = "avx512f")]
+    fn transpose(r: &[__m512i; 8]) -> [__m512i; 8] {
+        let t: [__m512i; 8] = std::array::from_fn(|k| {
+            let (a, b) = (r[k / 2 * 2], r[k / 2 * 2 + 1]);
+            if k % 2 == 0 {
+                _mm512_unpacklo_epi64(a, b)
+            } else {
+                _mm512_unpackhi_epi64(a, b)
+            }
+        });
+        let even = |a, b| _mm512_shuffle_i64x2::<0x88>(a, b);
+        let odd = |a, b| _mm512_shuffle_i64x2::<0xDD>(a, b);
+        let (s0, s1) = (even(t[0], t[2]), odd(t[0], t[2]));
+        let (s2, s3) = (even(t[1], t[3]), odd(t[1], t[3]));
+        let (s4, s5) = (even(t[4], t[6]), odd(t[4], t[6]));
+        let (s6, s7) = (even(t[5], t[7]), odd(t[5], t[7]));
+        [
+            even(s0, s4),
+            even(s2, s6),
+            even(s1, s5),
+            even(s3, s7),
+            odd(s0, s4),
+            odd(s2, s6),
+            odd(s1, s5),
+            odd(s3, s7),
+        ]
+    }
+
+    /// One 12-bit block at `src` (row stride `stride`): PASS1_BITS = 1.
+    #[inline]
+    #[target_feature(enable = "avx512f,avx512bw,avx512dq,avx512vl,avx2")]
+    fn block(src: &[u16], stride: usize, t: &QuantTable, out: &mut [i32; 64]) {
+        let center = _mm512_set1_epi64(2048);
+        let mut rows = [_mm512_setzero_si512(); 8];
+        for (r, v) in rows.iter_mut().enumerate() {
+            // SAFETY: each row of the block holds 8 samples (16 bytes).
+            let s = unsafe { _mm_loadu_si128(src[r * stride..r * stride + 8].as_ptr().cast()) };
+            *v = _mm512_sub_epi64(_mm512_cvtepu16_epi64(s), center);
+        }
+        // Rows: transpose so that lanes are rows.
+        let o = fdct_1d(&transpose(&rows));
+        let ws: [__m512i; 8] = std::array::from_fn(|k| {
+            if k % 4 == 0 {
+                _mm512_slli_epi64::<1>(o[k])
+            } else {
+                descale::<{ CONST_BITS - 1 }>(o[k])
+            }
+        });
+        // Columns: lanes are columns again.
+        let o = fdct_1d(&transpose(&ws));
+        let dst = out.as_chunks_mut::<8>().0;
+        for (k, d) in dst.iter_mut().enumerate() {
+            let v = if k % 4 == 0 {
+                descale::<1>(o[k])
+            } else {
+                descale::<{ CONST_BITS + 1 }>(o[k])
+            };
+            // `as i32`, then the 8-lane quantisation.
+            let q = super::super::avx2::quantize(t, k, _mm512_cvtepi64_epi32(v));
+            // SAFETY: `d` holds 8 i32.
+            unsafe { _mm256_storeu_si256(d.as_mut_ptr().cast(), q) };
+        }
+    }
+
+    #[target_feature(enable = "avx512f,avx512bw,avx512dq,avx512vl,avx2,fma")]
+    pub(in super::super) fn fdct_quantize12(
+        src: &[u16],
+        stride: usize,
+        t: &QuantTable,
+        out: &mut [[i32; 64]],
+    ) {
+        for (i, o) in out.iter_mut().enumerate() {
+            block(&src[8 * i..], stride, t, o);
+        }
+    }
+}
+
+pub(super) use wide::fdct_quantize12;
