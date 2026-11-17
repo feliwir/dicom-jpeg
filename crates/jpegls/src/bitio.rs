@@ -101,55 +101,42 @@ impl<'a> BitReader<'a> {
     }
 }
 
+/// Writes JPEG-LS scan data.
 #[cfg(feature = "encode")]
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct BitWriter {
-    pub(crate) out: Vec<u8>,
-    acc: u64,
-    nbits: u32,
-    prev_ff: bool,
+    w: bitio::BitWriter<T87>,
 }
 
 #[cfg(feature = "encode")]
 impl BitWriter {
     pub(crate) fn new(out: Vec<u8>) -> Self {
         BitWriter {
-            out,
-            ..Default::default()
+            w: bitio::BitWriter::new(out),
         }
     }
 
-    #[inline]
-    fn drain(&mut self) {
-        loop {
-            let width = if self.prev_ff { 7 } else { 8 };
-            if self.nbits < width {
-                break;
-            }
-            self.nbits -= width;
-            let byte = ((self.acc >> self.nbits) & ((1 << width) - 1)) as u8;
-            self.out.push(byte);
-            self.prev_ff = byte == 0xFF;
-        }
+    /// The output written so far (complete bytes only).
+    pub(crate) fn out(&mut self) -> &mut Vec<u8> {
+        &mut self.w.out
+    }
+
+    pub(crate) fn into_out(self) -> Vec<u8> {
+        self.w.out
     }
 
     /// Write the low `n` (<= 32) bits of `value`.
     #[inline]
     pub(crate) fn write(&mut self, value: u32, n: u32) {
-        if n == 0 {
-            return;
-        }
-        self.acc = (self.acc << n) | (value as u64 & ((1u64 << n) - 1));
-        self.nbits += n;
-        self.drain();
+        self.w.write(value, n);
     }
 
     /// `n` zero bits followed by a one bit.
     #[inline]
     pub(crate) fn unary(&mut self, mut n: u32) {
-        while n >= 24 {
-            self.write(0, 24);
-            n -= 24;
+        while n >= 32 {
+            self.write(0, 32);
+            n -= 32;
         }
         self.write(1, n + 1);
     }
@@ -170,16 +157,12 @@ impl BitWriter {
 
     /// Pad to a byte boundary with zero bits.
     pub(crate) fn flush(&mut self) {
-        let width = if self.prev_ff { 7 } else { 8 };
-        if self.nbits > 0 {
-            let pad = width - self.nbits;
-            self.write(0, pad);
-        }
-        if self.prev_ff {
-            // A byte with MSB 0 must follow 0xFF so it is not read as a marker.
-            self.out.push(0);
-            self.prev_ff = false;
-        }
+        self.w.flush();
+    }
+
+    /// Flush and write the restart marker RSTn (n modulo 8).
+    pub(crate) fn restart(&mut self, n: u8) {
+        self.w.restart(n);
     }
 }
 
@@ -199,7 +182,7 @@ mod tests {
             w.write(v | 0xFFF0, n);
         }
         w.flush();
-        let mut data = w.out;
+        let mut data = w.into_out();
         assert!(data.windows(2).all(|p| !(p[0] == 0xFF && p[1] & 0x80 != 0)));
         data.extend_from_slice(&[0xFF, 0xD9]);
         let mut r = BitReader::new(&data, 0);
@@ -221,7 +204,8 @@ mod tests {
             w.golomb(v, k, 32, 12);
         }
         w.flush();
-        let mut r = BitReader::new(&w.out, 0);
+        let data = w.into_out();
+        let mut r = BitReader::new(&data, 0);
         for &(v, k) in &cases {
             assert_eq!(r.golomb(k, 32, 12).unwrap(), v, "value {v} k {k}");
         }

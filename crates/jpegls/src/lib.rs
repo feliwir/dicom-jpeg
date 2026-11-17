@@ -467,12 +467,12 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
             sos.extend_from_slice(&[c as u8 + 1, 0]);
         }
         sos.extend_from_slice(&[opts.near as u8, interleave as u8, 0]);
-        write_segment(&mut writer.out, 0xDA, &sos);
+        write_segment(writer.out(), 0xDA, &sos);
         let refs: Vec<&[u16]> = comps.iter().map(|&c| planes[c].as_slice()).collect();
         scan::encode_scan(&mut writer, &params, &layout, &refs);
         writer.flush();
     }
-    let mut out = writer.out;
+    let mut out = writer.into_out();
     out.extend_from_slice(&[0xFF, 0xD9]);
     Ok(Encoded {
         data: out,

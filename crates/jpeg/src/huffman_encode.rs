@@ -73,67 +73,8 @@ impl EncodingTable {
     }
 }
 
-/// Entropy-coded segment writer with 0xFF byte stuffing.
-#[derive(Debug, Default)]
-pub(crate) struct BitWriter {
-    pub(crate) out: Vec<u8>,
-    acc: u64,
-    nbits: u32,
-}
-
-impl BitWriter {
-    pub(crate) fn new(out: Vec<u8>) -> Self {
-        BitWriter {
-            out,
-            acc: 0,
-            nbits: 0,
-        }
-    }
-
-    /// Write the low `n` (<= 24) bits of `value`.
-    #[inline]
-    pub(crate) fn write(&mut self, value: u32, n: u32) {
-        self.acc = (self.acc << n) | (value as u64 & ((1 << n) - 1));
-        self.nbits += n;
-        if self.nbits >= 32 {
-            self.nbits -= 32;
-            let word = (self.acc >> self.nbits) as u32;
-            // Fast path: no 0xFF byte, so no stuffing.
-            let v = !word;
-            if v.wrapping_sub(0x0101_0101) & !v & 0x8080_8080 == 0 {
-                self.out.extend_from_slice(&word.to_be_bytes());
-            } else {
-                self.push_stuffed(&word.to_be_bytes());
-            }
-        }
-    }
-
-    fn push_stuffed(&mut self, bytes: &[u8]) {
-        for &byte in bytes {
-            self.out.push(byte);
-            if byte == 0xFF {
-                self.out.push(0);
-            }
-        }
-    }
-
-    /// Pad the last byte with 1-bits (F.1.2.3) and write out all bits.
-    pub(crate) fn flush(&mut self) {
-        let pad = (8 - self.nbits % 8) % 8;
-        self.acc = (self.acc << pad) | ((1 << pad) - 1);
-        self.nbits += pad;
-        while self.nbits >= 8 {
-            self.nbits -= 8;
-            self.push_stuffed(&[(self.acc >> self.nbits) as u8]);
-        }
-    }
-
-    /// Emit a restart marker after flushing.
-    pub(crate) fn restart(&mut self, n: u8) {
-        self.flush();
-        self.out.extend_from_slice(&[0xFF, 0xD0 + (n & 7)]);
-    }
-}
+/// Entropy-coded segment writer (T.81 F.1.2.3 byte stuffing, 1-bit padding).
+pub(crate) type BitWriter = dicom_jpeg_common::bitio::BitWriter<dicom_jpeg_common::bitio::T81>;
 
 /// Magnitude category (number of bits) of a value.
 #[inline]

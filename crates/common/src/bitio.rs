@@ -1,9 +1,10 @@
-//! MSB-first bit reading from JPEG-family entropy-coded segments.
+//! MSB-first bit reading and writing of JPEG-family entropy-coded segments.
 //!
 //! T.81 (JPEG) and T.87 (JPEG-LS) both write bits MSB-first and protect
 //! markers by byte stuffing, but stuff differently; [`Stuffing`] selects
 //! the rule. The reader keeps up to 64 bits left-aligned in a register and
-//! refills it 8 bytes at a time when they contain no 0xFF.
+//! refills it 8 bytes at a time when they contain no 0xFF; the writer
+//! stores 32 bits at a time when they contain no 0xFF.
 
 /// A byte-stuffing rule for [`BitReader`].
 pub trait Stuffing {
@@ -16,6 +17,14 @@ pub trait Stuffing {
     /// Whether 0xFF followed by `next` starts a marker, when searching for
     /// one at the end of a segment.
     fn is_marker(next: u8) -> bool;
+
+    /// Writing: whether the byte after 0xFF carries only 7 bits (T.87)
+    /// rather than 0xFF being followed by a stuffed 0x00 byte (T.81).
+    const SEVEN_BITS_AFTER_FF: bool;
+
+    /// Writing: whether the last byte is padded with 1-bits (T.81) rather
+    /// than 0-bits (T.87).
+    const PAD_WITH_ONES: bool;
 }
 
 /// The meaning of a 0xFF byte in an entropy-coded segment.
@@ -44,6 +53,8 @@ pub struct T81;
 
 impl Stuffing for T81 {
     const MAX_UNIT: u32 = 8;
+    const SEVEN_BITS_AFTER_FF: bool = false;
+    const PAD_WITH_ONES: bool = true;
 
     #[inline]
     fn after_ff(next: Option<u8>) -> AfterFf {
@@ -72,6 +83,8 @@ pub struct T87;
 
 impl Stuffing for T87 {
     const MAX_UNIT: u32 = 15;
+    const SEVEN_BITS_AFTER_FF: bool = true;
+    const PAD_WITH_ONES: bool = false;
 
     #[inline]
     fn after_ff(next: Option<u8>) -> AfterFf {
@@ -316,6 +329,103 @@ impl<'a, S: Stuffing> BitReader<'a, S> {
     }
 }
 
+/// Writes bits MSB-first into an entropy-coded segment, stuffing as `S`
+/// requires.
+#[derive(Debug)]
+pub struct BitWriter<S> {
+    /// The output; bits still buffered are not in it yet.
+    pub out: Vec<u8>,
+    /// Buffered bits, right-aligned.
+    acc: u64,
+    nbits: u32,
+    /// The last byte written was 0xFF (T.87 only).
+    prev_ff: bool,
+    stuffing: std::marker::PhantomData<S>,
+}
+
+impl<S: Stuffing> BitWriter<S> {
+    /// A writer appending to `out`.
+    pub fn new(out: Vec<u8>) -> Self {
+        BitWriter {
+            out,
+            acc: 0,
+            nbits: 0,
+            prev_ff: false,
+            stuffing: std::marker::PhantomData,
+        }
+    }
+
+    /// Write the low `n` (<= 32) bits of `value`.
+    #[inline]
+    pub fn write(&mut self, value: u32, n: u32) {
+        debug_assert!(n <= 32 && self.nbits < 32);
+        self.acc = (self.acc << n) | (value as u64 & ((1u64 << n) - 1));
+        self.nbits += n;
+        if self.nbits >= 32 {
+            let word = (self.acc >> (self.nbits - 32)) as u32;
+            // Fast path: no 0xFF byte, so no stuffing.
+            let v = !word;
+            if !self.prev_ff && v.wrapping_sub(0x0101_0101) & !v & 0x8080_8080 == 0 {
+                self.out.extend_from_slice(&word.to_be_bytes());
+                self.nbits -= 32;
+            } else {
+                self.drain();
+            }
+        }
+    }
+
+    /// Write out all complete bytes.
+    #[cold]
+    fn drain(&mut self) {
+        loop {
+            let width = if S::SEVEN_BITS_AFTER_FF && self.prev_ff {
+                7
+            } else {
+                8
+            };
+            if self.nbits < width {
+                break;
+            }
+            self.nbits -= width;
+            let byte = ((self.acc >> self.nbits) & ((1 << width) - 1)) as u8;
+            self.out.push(byte);
+            if S::SEVEN_BITS_AFTER_FF {
+                self.prev_ff = byte == 0xFF;
+            } else if byte == 0xFF {
+                self.out.push(0);
+            }
+        }
+    }
+
+    /// Pad to a byte boundary and write out all bits.
+    pub fn flush(&mut self) {
+        self.drain();
+        if self.nbits > 0 {
+            let width = if S::SEVEN_BITS_AFTER_FF && self.prev_ff {
+                7
+            } else {
+                8
+            };
+            let pad = width - self.nbits;
+            let ones = if S::PAD_WITH_ONES { (1 << pad) - 1 } else { 0 };
+            self.acc = (self.acc << pad) | ones;
+            self.nbits += pad;
+            self.drain();
+        }
+        if S::SEVEN_BITS_AFTER_FF && self.prev_ff {
+            // A byte with MSB 0 must follow 0xFF so it is not read as a marker.
+            self.out.push(0);
+            self.prev_ff = false;
+        }
+    }
+
+    /// Flush and write the restart marker RSTn (n modulo 8).
+    pub fn restart(&mut self, n: u8) {
+        self.flush();
+        self.out.extend_from_slice(&[0xFF, 0xD0 + (n & 7)]);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,5 +484,45 @@ mod tests {
                 assert_eq!(b, expected[i / 8] >> (7 - i % 8) & 1, "step {step} bit {i}");
             }
         }
+    }
+
+    fn round_trip<S: Stuffing>() {
+        let values: Vec<(u32, u32)> = (0..2000u32)
+            .map(|i| {
+                let n = 1 + (i * 7) % 32;
+                let v = if i % 3 == 0 {
+                    u32::MAX
+                } else {
+                    i.wrapping_mul(2_654_435_761)
+                };
+                (v & (u32::MAX >> (32 - n)), n)
+            })
+            .collect();
+        let mut w = BitWriter::<S>::new(Vec::new());
+        for &(v, n) in &values {
+            w.write(v, n);
+        }
+        w.flush();
+        let mut data = w.out;
+        assert!(
+            data.windows(2)
+                .all(|p| !(p[0] == 0xFF && S::is_marker(p[1])))
+        );
+        data.extend_from_slice(&[0xFF, 0xD9]);
+        let mut r = BitReader::<S>::new(&data, 0);
+        for &(v, n) in &values {
+            assert_eq!(r.bits(n), v);
+        }
+        assert_eq!(r.end_position(), data.len() - 2);
+    }
+
+    #[test]
+    fn writer_round_trip_t81() {
+        round_trip::<T81>();
+    }
+
+    #[test]
+    fn writer_round_trip_t87() {
+        round_trip::<T87>();
     }
 }

@@ -413,8 +413,7 @@ pub(crate) fn encode_scan(w: &mut BitWriter, p: &Params, layout: &ScanLayout, pl
         n,
         || {
             let mut w = w_cell.borrow_mut();
-            w.flush();
-            w.out.extend_from_slice(&[0xFF, 0xD0 + rst]);
+            w.restart(rst);
             rst = (rst + 1) & 7;
             Ok(())
         },
