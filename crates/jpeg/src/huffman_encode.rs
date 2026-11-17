@@ -93,14 +93,23 @@ impl BitWriter {
     /// Write the low `n` (<= 24) bits of `value`.
     #[inline]
     pub(crate) fn write(&mut self, value: u32, n: u32) {
-        if n == 0 {
-            return;
-        }
         self.acc = (self.acc << n) | (value as u64 & ((1 << n) - 1));
         self.nbits += n;
-        while self.nbits >= 8 {
-            self.nbits -= 8;
-            let byte = (self.acc >> self.nbits) as u8;
+        if self.nbits >= 32 {
+            self.nbits -= 32;
+            let word = (self.acc >> self.nbits) as u32;
+            // Fast path: no 0xFF byte, so no stuffing.
+            let v = !word;
+            if v.wrapping_sub(0x0101_0101) & !v & 0x8080_8080 == 0 {
+                self.out.extend_from_slice(&word.to_be_bytes());
+            } else {
+                self.push_stuffed(&word.to_be_bytes());
+            }
+        }
+    }
+
+    fn push_stuffed(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
             self.out.push(byte);
             if byte == 0xFF {
                 self.out.push(0);
@@ -108,11 +117,14 @@ impl BitWriter {
         }
     }
 
-    /// Pad the last byte with 1-bits (F.1.2.3).
+    /// Pad the last byte with 1-bits (F.1.2.3) and write out all bits.
     pub(crate) fn flush(&mut self) {
-        if self.nbits > 0 {
-            let pad = 8 - self.nbits;
-            self.write((1 << pad) - 1, pad);
+        let pad = (8 - self.nbits % 8) % 8;
+        self.acc = (self.acc << pad) | ((1 << pad) - 1);
+        self.nbits += pad;
+        while self.nbits >= 8 {
+            self.nbits -= 8;
+            self.push_stuffed(&[(self.acc >> self.nbits) as u8]);
         }
     }
 

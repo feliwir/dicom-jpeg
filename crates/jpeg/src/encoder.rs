@@ -87,7 +87,14 @@ fn scaled_table(base: &[u16; 64], quality: u8, max: u32) -> [u16; 64] {
 }
 
 /// Callback receiving (pending restart marker, component index, block).
-type BlockVisitor<'a> = dyn FnMut(Option<u8>, usize, &[i16; 64]) + 'a;
+type BlockVisitor<'a> = dyn FnMut(Option<u8>, usize, &Block) + 'a;
+
+/// Quantized coefficients of a block (zig-zag order) with a bit set for
+/// each non-zero AC coefficient.
+struct Block {
+    zz: [i16; 64],
+    ac: u64,
+}
 
 struct Component {
     id: u8,
@@ -95,76 +102,146 @@ struct Component {
     v: usize,
     tq: u8,
     table: u8,
-    /// Quantized coefficients per block (zig-zag order), row-major over the
-    /// padded block grid.
-    blocks: Vec<[i16; 64]>,
+    /// Quantized blocks, row-major over the padded block grid.
+    blocks: Vec<Block>,
     blocks_w: usize,
 }
 
-fn samples_u16(image: &Image) -> Vec<u16> {
-    match &image.samples {
-        Samples::U8(v) => v.iter().map(|&s| s as u16).collect(),
-        Samples::U16(v) => v.clone(),
-    }
-}
-
-/// IJG fixed-point RGB -> YCbCr (jccolor.c).
-fn rgb_to_ycbcr(rgb: &[u16], precision: u8) -> [Vec<u16>; 3] {
-    const SCALEBITS: u32 = 16;
-    let fix = |x: f64| (x * 65536.0 + 0.5) as i64;
-    let half = 1i64 << (SCALEBITS - 1);
-    let offset = (1i64 << (precision - 1)) << SCALEBITS;
-    let n = rgb.len() / 3;
-    let mut out = [vec![0u16; n], vec![0u16; n], vec![0u16; n]];
-    for i in 0..n {
-        let (r, g, b) = (
-            rgb[3 * i] as i64,
-            rgb[3 * i + 1] as i64,
-            rgb[3 * i + 2] as i64,
-        );
-        out[0][i] =
-            ((fix(0.29900) * r + fix(0.58700) * g + fix(0.11400) * b + half) >> SCALEBITS) as u16;
-        out[1][i] = ((-fix(0.16874) * r - fix(0.33126) * g + fix(0.5) * b + offset + half - 1)
-            >> SCALEBITS) as u16;
-        out[2][i] = ((fix(0.5) * r - fix(0.41869) * g - fix(0.08131) * b + offset + half - 1)
-            >> SCALEBITS) as u16;
-    }
-    out
-}
-
-/// Expand a full-resolution plane to `pw` x `ph` by edge replication and
-/// downsample by (`fx`, `fy`) with IJG's alternating-bias averaging.
-fn prepare_plane(
-    src: &[u16],
-    w: usize,
-    h: usize,
+/// Copy the samples of row `y` into the full-resolution planes (row stride
+/// `pw`), converting RGB to YCbCr with libjpeg's fixed-point arithmetic
+/// (jccolor.c) when `rgb`.
+fn fill_row<S: Copy + Into<u32>>(
+    src: &[S],
+    planes: &mut [Vec<u16>],
+    y: usize,
     pw: usize,
-    ph: usize,
-    fx: usize,
-    fy: usize,
-) -> Vec<u16> {
-    let (ow, oh) = (pw / fx, ph / fy);
-    let mut out = vec![0u16; ow * oh];
-    let at = |x: usize, y: usize| src[y.min(h - 1) * w + x.min(w - 1)] as u32;
-    for oy in 0..oh {
-        for ox in 0..ow {
-            let mut sum = 0u32;
-            for dy in 0..fy {
-                for dx in 0..fx {
-                    sum += at(ox * fx + dx, oy * fy + dy);
-                }
+    rgb: bool,
+    precision: u8,
+) {
+    let nc = planes.len();
+    let w = src.len() / nc;
+    let off = y * pw;
+    if rgb {
+        const SCALEBITS: u32 = 16;
+        let fix = |x: f64| (x * 65536.0 + 0.5) as i32;
+        let half = 1i32 << (SCALEBITS - 1);
+        let offset = (1i32 << (precision - 1)) << SCALEBITS;
+        let (yr, yg, yb) = (fix(0.29900), fix(0.58700), fix(0.11400));
+        let (cbr, cbg, cbb) = (fix(0.16874), fix(0.33126), fix(0.5));
+        let (crr, crg, crb) = (fix(0.5), fix(0.41869), fix(0.08131));
+        let [p0, p1, p2] = planes else {
+            unreachable!("three components")
+        };
+        let rows = p0[off..off + w]
+            .iter_mut()
+            .zip(&mut p1[off..off + w])
+            .zip(&mut p2[off..off + w]);
+        for (((y, cb), cr), px) in rows.zip(src.as_chunks::<3>().0) {
+            let (r, g, b) = (
+                px[0].into() as i32,
+                px[1].into() as i32,
+                px[2].into() as i32,
+            );
+            *y = ((yr * r + yg * g + yb * b + half) >> SCALEBITS) as u16;
+            *cb = ((-cbr * r - cbg * g + cbb * b + offset + half - 1) >> SCALEBITS) as u16;
+            *cr = ((crr * r - crg * g - crb * b + offset + half - 1) >> SCALEBITS) as u16;
+        }
+    } else {
+        for (c, plane) in planes.iter_mut().enumerate() {
+            for (d, &s) in plane[off..off + w]
+                .iter_mut()
+                .zip(src.iter().skip(c).step_by(nc))
+            {
+                *d = s.into() as u16;
             }
-            let n = (fx * fy) as u32;
-            // Bias alternates per column like jcsample.c (1,0 for 2 samples; 1,2 for 4).
-            let bias = match n {
-                1 => 0,
-                2 => (ox & 1) as u32,
-                _ => 1 + (ox & 1) as u32,
-            };
-            out[oy * ow + ox] = ((sum + bias) / n) as u16;
         }
     }
+}
+
+/// The image as full-resolution planes in the coded colour space, padded to
+/// `pw` x `ph` by edge replication.
+fn full_planes(image: &Image, precision: u8, rgb: bool, pw: usize, ph: usize) -> Vec<Vec<u16>> {
+    let (w, h) = (image.info.width as usize, image.info.height as usize);
+    let nc = image.info.components as usize;
+    let mut planes = vec![vec![0u16; pw * ph]; nc];
+    for y in 0..h {
+        let r = y * w * nc..(y + 1) * w * nc;
+        match &image.samples {
+            Samples::U8(s) => fill_row(&s[r], &mut planes, y, pw, rgb, precision),
+            Samples::U16(s) => fill_row(&s[r], &mut planes, y, pw, rgb, precision),
+        }
+    }
+    for plane in &mut planes {
+        for y in 0..h {
+            let row = &mut plane[y * pw..(y + 1) * pw];
+            let last = row[w - 1];
+            row[w..].fill(last);
+        }
+        let (done, rest) = plane.split_at_mut(h * pw);
+        let last = &done[(h - 1) * pw..];
+        for row in rest.chunks_exact_mut(pw) {
+            row.copy_from_slice(last);
+        }
+    }
+    planes
+}
+
+/// Downsample a padded `pw`-wide plane by (`fx`, `fy`) with IJG's
+/// alternating-bias averaging (jcsample.c: bias 0,1 for 2 samples, 1,2 for 4).
+fn downsample(full: Vec<u16>, pw: usize, fx: usize, fy: usize) -> Vec<u16> {
+    let mut out = Vec::with_capacity(full.len() / (fx * fy));
+    match (fx, fy) {
+        (1, 1) => return full,
+        (2, 1) => {
+            for row in full.chunks_exact(pw) {
+                out.extend(row.as_chunks::<4>().0.iter().flat_map(|p| {
+                    [
+                        ((p[0] as u32 + p[1] as u32) >> 1) as u16,
+                        ((p[2] as u32 + p[3] as u32 + 1) >> 1) as u16,
+                    ]
+                }));
+            }
+        }
+        (2, 2) => {
+            for rows in full.chunks_exact(2 * pw) {
+                let (a, b) = rows.split_at(pw);
+                let pairs = a.as_chunks::<4>().0.iter().zip(b.as_chunks::<4>().0);
+                out.extend(pairs.flat_map(|(a, b)| {
+                    let s0 = a[0] as u32 + a[1] as u32 + b[0] as u32 + b[1] as u32;
+                    let s1 = a[2] as u32 + a[3] as u32 + b[2] as u32 + b[3] as u32;
+                    [((s0 + 1) >> 2) as u16, ((s1 + 2) >> 2) as u16]
+                }));
+            }
+        }
+        _ => unreachable!("only 4:2:2 and 4:2:0 subsampling"),
+    }
     out
+}
+
+/// A divisor with its reciprocal for exact division by multiplication
+/// (Lemire et al., "Faster remainder by direct computation"): for any
+/// 32-bit `n`, `n / d == (m * n) >> 64` with `m = 2^64 / d + 1`.
+#[derive(Clone, Copy)]
+struct Divisor {
+    half: u32,
+    m: u64,
+}
+
+impl Divisor {
+    fn new(d: u32) -> Self {
+        Divisor {
+            half: d >> 1,
+            m: u64::MAX / d as u64 + 1,
+        }
+    }
+
+    /// libjpeg quantisation: round half away from zero.
+    #[inline(always)]
+    fn quantize(self, c: i32) -> i32 {
+        let a = c.unsigned_abs() + self.half;
+        let v = ((self.m as u128 * a as u128) >> 64) as i32;
+        if c < 0 { -v } else { v }
+    }
 }
 
 fn write_segment(out: &mut Vec<u8>, marker: u8, payload: &[u8]) {
@@ -238,18 +315,8 @@ fn encode_dct(process: Process, image: &Image, opts: &EncoderOptions) -> Result<
     if nc > 4 {
         return Err(Error::unsupported(CODEC, "more than 4 components"));
     }
-    let samples = samples_u16(image);
     let color = image.info.color_space;
     let is_color = nc == 3 && matches!(color, ColorSpace::Rgb | ColorSpace::YCbCr);
-
-    // Full-resolution planes in the coded colour space.
-    let planes: Vec<Vec<u16>> = if nc == 3 && color == ColorSpace::Rgb {
-        rgb_to_ycbcr(&samples, precision).into()
-    } else {
-        (0..nc)
-            .map(|c| samples.iter().skip(c).step_by(nc).copied().collect())
-            .collect()
-    };
     let (hmax, vmax) = match (is_color, opts.subsampling) {
         (true, ChromaSubsampling::S422) => (2, 1),
         (true, ChromaSubsampling::S420) => (2, 2),
@@ -257,6 +324,14 @@ fn encode_dct(process: Process, image: &Image, opts: &EncoderOptions) -> Result<
     };
     let (mcus_x, mcus_y) = (w.div_ceil(8 * hmax), h.div_ceil(8 * vmax));
     let (pw, ph) = (mcus_x * 8 * hmax, mcus_y * 8 * vmax);
+    // Padded full-resolution planes in the coded colour space.
+    let planes = full_planes(
+        image,
+        precision,
+        nc == 3 && color == ColorSpace::Rgb,
+        pw,
+        ph,
+    );
 
     let qmax = if precision == 8 { 255 } else { 32767 };
     let quality = opts.quality;
@@ -267,30 +342,34 @@ fn encode_dct(process: Process, image: &Image, opts: &EncoderOptions) -> Result<
     let coef_max: i32 = if precision == 8 { 1023 } else { 16383 };
 
     let mut comps: Vec<Component> = Vec::with_capacity(nc);
-    for (ci, plane) in planes.iter().enumerate() {
+    for (ci, plane) in planes.into_iter().enumerate() {
         let chroma = is_color && ci > 0;
         let (ch, cv) = if chroma { (1, 1) } else { (hmax, vmax) };
         let (fx, fy) = (hmax / ch, vmax / cv);
-        let data = prepare_plane(plane, w, h, pw, ph, fx, fy);
+        let data = downsample(plane, pw, fx, fy);
         let (cw, chh) = (pw / fx, ph / fy);
         let (bw, bh) = (cw / 8, chh / 8);
         let table = if chroma { 1 } else { 0 };
+        // libjpeg quantization: divisor 8*q (the FDCT output is scaled by
+        // 8), in zig-zag order.
         let q = &qtables[table as usize];
+        let div: [Divisor; 64] = std::array::from_fn(|k| Divisor::new(q[ZIGZAG[k]] as u32 * 8));
         let mut blocks = Vec::with_capacity(bw * bh);
         let mut coef = [0i32; 64];
         for by in 0..bh {
             for bx in 0..bw {
                 fdct_block(&data[by * 8 * cw + bx * 8..], cw, precision, &mut coef);
                 let mut zz = [0i16; 64];
+                let mut nonzero = 0u64;
                 for k in 0..64 {
-                    // libjpeg quantization: divisor 8*q (FDCT output is scaled by 8), round half away from zero.
-                    let qv = q[ZIGZAG[k]] as i32 * 8;
-                    let c = coef[ZIGZAG[k]];
-                    let v = (c.abs() + (qv >> 1)) / qv;
-                    let v = if c < 0 { -v } else { v };
+                    let v = div[k].quantize(coef[ZIGZAG[k]]);
                     zz[k] = v.clamp(-coef_max, coef_max) as i16;
+                    nonzero |= ((v != 0) as u64) << k;
                 }
-                blocks.push(zz);
+                blocks.push(Block {
+                    zz,
+                    ac: nonzero & !1,
+                });
             }
         }
         comps.push(Component {
@@ -344,23 +423,22 @@ fn encode_dct(process: Process, image: &Image, opts: &EncoderOptions) -> Result<
                 pred.fill(0);
             }
             let t = comps[ci].table as usize;
-            let diff = b[0] as i32 - pred[ci];
-            pred[ci] = b[0] as i32;
+            let diff = b.zz[0] as i32 - pred[ci];
+            pred[ci] = b.zz[0] as i32;
             dc_freq[t][category(diff) as usize] += 1;
-            let mut run = 0;
-            for &c in &b[1..] {
-                if c == 0 {
-                    run += 1;
-                    continue;
-                }
+            let (mut mask, mut last) = (b.ac, 0);
+            while mask != 0 {
+                let k = mask.trailing_zeros();
+                let mut run = k - last - 1;
                 while run > 15 {
                     ac_freq[t][0xF0] += 1;
                     run -= 16;
                 }
-                ac_freq[t][(run << 4) as usize | category(c as i32) as usize] += 1;
-                run = 0;
+                ac_freq[t][(run << 4) as usize | category(b.zz[k as usize] as i32) as usize] += 1;
+                last = k;
+                mask &= mask - 1;
             }
-            if run > 0 {
+            if last < 63 {
                 ac_freq[t][0] += 1;
             }
         });
@@ -423,27 +501,27 @@ fn encode_dct(process: Process, image: &Image, opts: &EncoderOptions) -> Result<
         }
         let t = comps[ci].table as usize;
         let (dc, ac) = (&dc_tables[t], &ac_tables[t]);
-        let diff = b[0] as i32 - pred[ci];
-        pred[ci] = b[0] as i32;
+        let diff = b.zz[0] as i32 - pred[ci];
+        pred[ci] = b.zz[0] as i32;
         let s = category(diff);
         dc.emit(&mut wr, s as u8);
         wr.write(magnitude_bits(diff, s), s);
-        let mut run = 0;
-        for &c in &b[1..] {
-            if c == 0 {
-                run += 1;
-                continue;
-            }
+        let (mut mask, mut last) = (b.ac, 0);
+        while mask != 0 {
+            let k = mask.trailing_zeros();
+            let mut run = k - last - 1;
             while run > 15 {
                 ac.emit(&mut wr, 0xF0);
                 run -= 16;
             }
-            let s = category(c as i32);
+            let c = b.zz[k as usize] as i32;
+            let s = category(c);
             ac.emit(&mut wr, ((run << 4) | s) as u8);
-            wr.write(magnitude_bits(c as i32, s), s);
-            run = 0;
+            wr.write(magnitude_bits(c, s), s);
+            last = k;
+            mask &= mask - 1;
         }
-        if run > 0 {
+        if last < 63 {
             ac.emit(&mut wr, 0);
         }
     });
@@ -480,18 +558,24 @@ fn encode_lossless(image: &Image, predictor: u8, pt: u8, restart: u16) -> Result
     if nc > 4 {
         return Err(Error::unsupported(CODEC, "more than 4 components"));
     }
-    let samples = samples_u16(image);
     let mask = ((1u32 << precision) - 1) as u16;
-    let planes: Vec<Vec<u16>> = (0..nc)
-        .map(|c| {
-            samples
+    let plane = |c: usize| -> Vec<u16> {
+        match &image.samples {
+            Samples::U8(s) => s
                 .iter()
                 .skip(c)
                 .step_by(nc)
-                .map(|&s| (s & mask) >> pt)
-                .collect()
-        })
-        .collect();
+                .map(|&v| (v as u16 & mask) >> pt)
+                .collect(),
+            Samples::U16(s) => s
+                .iter()
+                .skip(c)
+                .step_by(nc)
+                .map(|&v| (v & mask) >> pt)
+                .collect(),
+        }
+    };
+    let planes: Vec<Vec<u16>> = (0..nc).map(plane).collect();
     let initial = 1i32 << (precision - pt - 1);
     let restart = restart as usize;
 
