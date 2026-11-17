@@ -13,6 +13,7 @@ pub mod bitio;
 pub mod color;
 pub mod float;
 pub mod huffman;
+pub mod interleave;
 pub mod simd;
 
 pub use error::{Error, Result};
