@@ -12,6 +12,7 @@
 //! syntax; in dicom-rs 0.10 that is only JPEG baseline with the `jpeg`
 //! feature of dicom-pixeldata, which its default `native` feature enables.
 //! Make sure the crate is linked, e.g. with `use dicom_jpeg_dicom as _;`.
+//! The crate's README is a complete guide to using it with dicom-rs.
 //!
 //! Notes on the dicom-rs adapter contract:
 //! * decoded 3-sample images are delivered as interleaved RGB

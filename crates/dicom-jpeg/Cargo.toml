@@ -54,7 +54,7 @@ dicom-dictionary-std.workspace = true
 dicom-encoding.workspace = true
 dicom-object = "0.10.1"
 # Without dicom-rs's own codecs, so the registry tests see only dicom-jpeg.
-dicom-pixeldata = { version = "0.10.1", default-features = false }
+dicom-pixeldata = { version = "0.10.1", default-features = false, features = ["image"] }
 dicom-transfer-syntax-registry = { version = "0.10.1", default-features = false }
 jpeg-decoder = "0.3"
 jxl-oxide = { version = "0.12", default-features = false }
@@ -90,6 +90,10 @@ required-features = ["jpeg", "encode"]
 [[example]]
 name = "decode"
 required-features = ["dicom"]
+
+[[example]]
+name = "dicom_rs"
+required-features = ["inventory-registry"]
 
 [[test]]
 name = "jpegls_conformance"

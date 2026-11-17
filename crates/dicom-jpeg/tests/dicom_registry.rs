@@ -63,3 +63,34 @@ fn pixeldata_decodes_through_the_registry() {
     }
     assert!(checked > 0 || !cfg!(feature = "jpeg"));
 }
+
+/// dicom-pixeldata's `Transcode` encodes through the registered encoder:
+/// native references, transcoded to each lossless syntax and decoded again,
+/// come back bit-identical.
+#[cfg(feature = "encode")]
+#[test]
+fn pixeldata_transcodes_through_the_registry() {
+    use dicom_dictionary_std::uids;
+    use dicom_pixeldata::Transcode;
+
+    let targets = [
+        uids::JPEG_LOSSLESS_SV1,
+        uids::JPEGLS_LOSSLESS,
+        uids::JPEG2000_LOSSLESS,
+        uids::HTJ2K_LOSSLESS,
+        uids::JPEGXL_LOSSLESS,
+    ];
+    for file in ["dicom/wg04/REF/CT1_UNC", "dicom/wg04/REF/VL1_UNC"] {
+        let original = common::open(file);
+        let native = original.decode_pixel_data().unwrap().data().to_vec();
+        for uid in targets.into_iter().filter(|u| enabled(u)) {
+            let ts = TransferSyntaxRegistry.get(uid).unwrap();
+            let mut obj = original.clone();
+            obj.transcode(ts)
+                .unwrap_or_else(|e| panic!("{file} -> {uid}: {e}"));
+            assert_eq!(obj.meta().transfer_syntax().trim_end_matches('\0'), uid);
+            let decoded = obj.decode_pixel_data().unwrap();
+            assert_eq!(decoded.data(), &native[..], "{file} -> {uid}");
+        }
+    }
+}

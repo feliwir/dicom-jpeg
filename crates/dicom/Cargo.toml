@@ -1,6 +1,7 @@
 [package]
 name = "dicom-jpeg-dicom"
 description = "dicom-rs PixelDataReader / PixelDataWriter adapters for the dicom-jpeg codecs"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

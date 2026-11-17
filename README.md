@@ -21,8 +21,10 @@ Other features:
 
 ## Using it with dicom-rs
 
-With the `inventory-registry` feature, dicom-rs itself uses dicom-jpeg, e.g.
-in `dicom_pixeldata::PixelDecoder::decode_pixel_data`:
+With the `inventory-registry` feature, dicom-jpeg registers itself as the
+dicom-rs codec for the JPEG family, so dicom-rs decodes, encodes and
+transcodes these transfer syntaxes with it (e.g. `decode_pixel_data`,
+`Transcode`) without code changes:
 
 ```toml
 [dependencies]
@@ -30,26 +32,19 @@ dicom = "0.10"
 dicom-jpeg = { git = "https://github.com/feliwir/dicom-jpeg", features = ["inventory-registry"] }
 ```
 
-If nothing else in your code refers to dicom-jpeg, add `use dicom_jpeg as _;`
-so that the crate is linked and its registrations are seen.
+The guide in [crates/dicom/README.md](crates/dicom/README.md) explains:
+- linking the crate;
+- which transfer syntaxes dicom-jpeg takes over from dicom-rs's built-in
+  codecs (all but JPEG baseline unless dicom-pixeldata's `native` feature is
+  off);
+- using the adapter directly.
 
-dicom-rs keeps a built-in codec when it already decodes and encodes a
-transfer syntax. In dicom-rs 0.10 that is only JPEG baseline (.50), with the
-`jpeg` feature that dicom-pixeldata's default `native` feature enables; every
-other JPEG-family syntax goes to dicom-jpeg. To have dicom-jpeg handle JPEG
-baseline as well, use dicom-pixeldata without `native` (keeping RLE and
-deflate):
+The example [crates/dicom-jpeg/examples/dicom_rs.rs](crates/dicom-jpeg/examples/dicom_rs.rs)
+converts DICOM files to PNG with plain dicom-rs:
 
-```toml
-[dependencies]
-dicom = { version = "0.10", default-features = false, features = ["inventory-registry", "ul"] }
-dicom-pixeldata = { version = "0.10", default-features = false, features = ["rle", "deflate", "rayon"] }
-dicom-jpeg = { git = "https://github.com/feliwir/dicom-jpeg", features = ["inventory-registry"] }
+```sh
+cargo run --release -p dicom-jpeg --example dicom_rs --features inventory-registry -- testdata/dicom/wg04/J2KR/CT1_J2KR --window 40 400
 ```
-
-Without the feature, use the adapter directly:
-`dicom_jpeg::dicom_rs::PixelAdapter::from_uid(ts)` implements
-`PixelDataReader` and `PixelDataWriter`.
 
 ## Crates
 
