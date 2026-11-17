@@ -28,170 +28,170 @@
 <text x="16.0" y="72.0" class="sub" text-anchor="start">Single thread · AMD Ryzen 9 9950X3D 16-Core Processor</text>
 <text x="16.0" y="107.0" class="group" text-anchor="start">common/deinterleave3 u16</text>
 <text x="190.0" y="133.0" class="name" text-anchor="end">scalar</text>
-<path class="l0" d="M200.0,121.0 h85.3 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-85.3 z"><title>scalar: 1.87 G/s  1.0×</title></path>
-<text x="297.3" y="133.0" class="value" text-anchor="start">1.87 G/s  1.0×</text>
+<path class="l0" d="M200.0,121.0 h77.7 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-77.7 z"><title>scalar: 1.86 G/s  1.0×</title></path>
+<text x="289.7" y="133.0" class="value" text-anchor="start">1.86 G/s  1.0×</text>
 <text x="190.0" y="159.0" class="name" text-anchor="end">sse41</text>
-<path class="l1" d="M200.0,147.0 h405.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-405.0 z"><title>sse41: 8.57 G/s  4.6×</title></path>
-<text x="617.0" y="159.0" class="value" text-anchor="start">8.57 G/s  4.6×</text>
+<path class="l1" d="M200.0,147.0 h363.9 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-363.9 z"><title>sse41: 8.39 G/s  4.5×</title></path>
+<text x="575.9" y="159.0" class="value" text-anchor="start">8.39 G/s  4.5×</text>
 <text x="190.0" y="185.0" class="name" text-anchor="end">avx2</text>
-<path class="l2" d="M200.0,173.0 h407.7 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-407.7 z"><title>avx2: 8.63 G/s  4.6×</title></path>
-<text x="619.7" y="185.0" class="value" text-anchor="start">8.63 G/s  4.6×</text>
+<path class="l2" d="M200.0,173.0 h369.9 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-369.9 z"><title>avx2: 8.53 G/s  4.6×</title></path>
+<text x="581.9" y="185.0" class="value" text-anchor="start">8.53 G/s  4.6×</text>
 <text x="190.0" y="211.0" class="name" text-anchor="end">avx512</text>
-<path class="l3" d="M200.0,199.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>avx512: 8.72 G/s  4.7×</title></path>
-<text x="624.0" y="211.0" class="value" text-anchor="start">8.72 G/s  4.7×</text>
+<path class="l3" d="M200.0,199.0 h372.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-372.0 z"><title>avx512: 8.58 G/s  4.6×</title></path>
+<text x="584.0" y="211.0" class="value" text-anchor="start">8.58 G/s  4.6×</text>
 <line class="axis" x1="200" y1="116" x2="200" y2="220"/>
 <text x="16.0" y="241.0" class="group" text-anchor="start">common/deinterleave3 u8</text>
 <text x="190.0" y="267.0" class="name" text-anchor="end">scalar</text>
-<path class="l0" d="M200.0,255.0 h111.1 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-111.1 z"><title>scalar: 3.49 G/s  1.0×</title></path>
-<text x="323.1" y="267.0" class="value" text-anchor="start">3.49 G/s  1.0×</text>
+<path class="l0" d="M200.0,255.0 h99.3 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-99.3 z"><title>scalar: 3.43 G/s  1.0×</title></path>
+<text x="311.3" y="267.0" class="value" text-anchor="start">3.43 G/s  1.0×</text>
 <text x="190.0" y="293.0" class="name" text-anchor="end">sse41</text>
-<path class="l1" d="M200.0,281.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>sse41: 12.64 G/s  3.6×</title></path>
-<text x="624.0" y="293.0" class="value" text-anchor="start">12.64 G/s  3.6×</text>
+<path class="l1" d="M200.0,281.0 h369.9 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-369.9 z"><title>sse41: 12.43 G/s  3.6×</title></path>
+<text x="581.9" y="293.0" class="value" text-anchor="start">12.43 G/s  3.6×</text>
 <text x="190.0" y="319.0" class="name" text-anchor="end">avx2</text>
-<path class="l2" d="M200.0,307.0 h411.4 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-411.4 z"><title>avx2: 12.62 G/s  3.6×</title></path>
-<text x="623.4" y="319.0" class="value" text-anchor="start">12.62 G/s  3.6×</text>
+<path class="l2" d="M200.0,307.0 h370.6 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-370.6 z"><title>avx2: 12.45 G/s  3.6×</title></path>
+<text x="582.6" y="319.0" class="value" text-anchor="start">12.45 G/s  3.6×</text>
 <text x="190.0" y="345.0" class="name" text-anchor="end">avx512</text>
-<path class="l3" d="M200.0,333.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>avx512: 12.64 G/s  3.6×</title></path>
-<text x="624.0" y="345.0" class="value" text-anchor="start">12.64 G/s  3.6×</text>
+<path class="l3" d="M200.0,333.0 h372.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-372.0 z"><title>avx512: 12.49 G/s  3.6×</title></path>
+<text x="584.0" y="345.0" class="value" text-anchor="start">12.49 G/s  3.6×</text>
 <line class="axis" x1="200" y1="250" x2="200" y2="354"/>
 <text x="16.0" y="375.0" class="group" text-anchor="start">common/interleave3 u16</text>
 <text x="190.0" y="401.0" class="name" text-anchor="end">scalar</text>
-<path class="l0" d="M200.0,389.0 h315.7 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-315.7 z"><title>scalar: 6.74 G/s  1.0×</title></path>
-<text x="527.7" y="401.0" class="value" text-anchor="start">6.74 G/s  1.0×</text>
+<path class="l0" d="M200.0,389.0 h286.6 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-286.6 z"><title>scalar: 6.45 G/s  1.0×</title></path>
+<text x="498.6" y="401.0" class="value" text-anchor="start">6.45 G/s  1.0×</text>
 <text x="190.0" y="427.0" class="name" text-anchor="end">sse41</text>
-<path class="l1" d="M200.0,415.0 h410.8 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-410.8 z"><title>sse41: 8.74 G/s  1.3×</title></path>
-<text x="622.8" y="427.0" class="value" text-anchor="start">8.74 G/s  1.3×</text>
+<path class="l1" d="M200.0,415.0 h372.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-372.0 z"><title>sse41: 8.34 G/s  1.3×</title></path>
+<text x="584.0" y="427.0" class="value" text-anchor="start">8.34 G/s  1.3×</text>
 <text x="190.0" y="453.0" class="name" text-anchor="end">avx2</text>
-<path class="l2" d="M200.0,441.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>avx2: 8.77 G/s  1.3×</title></path>
-<text x="624.0" y="453.0" class="value" text-anchor="start">8.77 G/s  1.3×</text>
+<path class="l2" d="M200.0,441.0 h371.7 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-371.7 z"><title>avx2: 8.34 G/s  1.3×</title></path>
+<text x="583.7" y="453.0" class="value" text-anchor="start">8.34 G/s  1.3×</text>
 <text x="190.0" y="479.0" class="name" text-anchor="end">avx512</text>
-<path class="l3" d="M200.0,467.0 h411.4 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-411.4 z"><title>avx512: 8.76 G/s  1.3×</title></path>
-<text x="623.4" y="479.0" class="value" text-anchor="start">8.76 G/s  1.3×</text>
+<path class="l3" d="M200.0,467.0 h365.9 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-365.9 z"><title>avx512: 8.21 G/s  1.3×</title></path>
+<text x="577.9" y="479.0" class="value" text-anchor="start">8.21 G/s  1.3×</text>
 <line class="axis" x1="200" y1="384" x2="200" y2="488"/>
 <text x="16.0" y="509.0" class="group" text-anchor="start">common/interleave3 u8</text>
 <text x="190.0" y="535.0" class="name" text-anchor="end">scalar</text>
-<path class="l0" d="M200.0,523.0 h120.6 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-120.6 z"><title>scalar: 3.50 G/s  1.0×</title></path>
-<text x="332.6" y="535.0" class="value" text-anchor="start">3.50 G/s  1.0×</text>
+<path class="l0" d="M200.0,523.0 h103.2 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-103.2 z"><title>scalar: 3.24 G/s  1.0×</title></path>
+<text x="315.2" y="535.0" class="value" text-anchor="start">3.24 G/s  1.0×</text>
 <text x="190.0" y="561.0" class="name" text-anchor="end">sse41</text>
-<path class="l1" d="M200.0,549.0 h410.9 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-410.9 z"><title>sse41: 11.64 G/s  3.3×</title></path>
-<text x="622.9" y="561.0" class="value" text-anchor="start">11.64 G/s  3.3×</text>
+<path class="l1" d="M200.0,549.0 h367.3 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-367.3 z"><title>sse41: 11.21 G/s  3.5×</title></path>
+<text x="579.3" y="561.0" class="value" text-anchor="start">11.21 G/s  3.5×</text>
 <text x="190.0" y="587.0" class="name" text-anchor="end">avx2</text>
-<path class="l2" d="M200.0,575.0 h408.1 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-408.1 z"><title>avx2: 11.57 G/s  3.3×</title></path>
-<text x="620.1" y="587.0" class="value" text-anchor="start">11.57 G/s  3.3×</text>
+<path class="l2" d="M200.0,575.0 h372.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-372.0 z"><title>avx2: 11.35 G/s  3.5×</title></path>
+<text x="584.0" y="587.0" class="value" text-anchor="start">11.35 G/s  3.5×</text>
 <text x="190.0" y="613.0" class="name" text-anchor="end">avx512</text>
-<path class="l3" d="M200.0,601.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>avx512: 11.68 G/s  3.3×</title></path>
-<text x="624.0" y="613.0" class="value" text-anchor="start">11.68 G/s  3.3×</text>
+<path class="l3" d="M200.0,601.0 h361.8 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-361.8 z"><title>avx512: 11.05 G/s  3.4×</title></path>
+<text x="573.8" y="613.0" class="value" text-anchor="start">11.05 G/s  3.4×</text>
 <line class="axis" x1="200" y1="518" x2="200" y2="622"/>
 <text x="16.0" y="643.0" class="group" text-anchor="start">jpeg/downsample h2v1</text>
 <text x="190.0" y="669.0" class="name" text-anchor="end">scalar</text>
-<path class="l0" d="M200.0,657.0 h67.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-67.0 z"><title>scalar: 15.06 G/s  1.0×</title></path>
-<text x="279.0" y="669.0" class="value" text-anchor="start">15.06 G/s  1.0×</text>
+<path class="l0" d="M200.0,657.0 h75.9 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-75.9 z"><title>scalar: 15.03 G/s  1.0×</title></path>
+<text x="287.9" y="669.0" class="value" text-anchor="start">15.03 G/s  1.0×</text>
 <text x="190.0" y="695.0" class="name" text-anchor="end">sse41</text>
-<path class="l1" d="M200.0,683.0 h126.1 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-126.1 z"><title>sse41: 27.61 G/s  1.8×</title></path>
-<text x="338.1" y="695.0" class="value" text-anchor="start">27.61 G/s  1.8×</text>
+<path class="l1" d="M200.0,683.0 h146.3 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-146.3 z"><title>sse41: 28.25 G/s  1.9×</title></path>
+<text x="358.3" y="695.0" class="value" text-anchor="start">28.25 G/s  1.9×</text>
 <text x="190.0" y="721.0" class="name" text-anchor="end">avx2</text>
-<path class="l2" d="M200.0,709.0 h265.5 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-265.5 z"><title>avx2: 57.18 G/s  3.8×</title></path>
-<text x="477.5" y="721.0" class="value" text-anchor="start">57.18 G/s  3.8×</text>
+<path class="l2" d="M200.0,709.0 h292.9 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-292.9 z"><title>avx2: 55.81 G/s  3.7×</title></path>
+<text x="504.9" y="721.0" class="value" text-anchor="start">55.81 G/s  3.7×</text>
 <text x="190.0" y="747.0" class="name" text-anchor="end">avx512</text>
-<path class="l3" d="M200.0,735.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>avx512: 88.26 G/s  5.9×</title></path>
-<text x="624.0" y="747.0" class="value" text-anchor="start">88.26 G/s  5.9×</text>
+<path class="l3" d="M200.0,735.0 h372.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-372.0 z"><title>avx512: 70.68 G/s  4.7×</title></path>
+<text x="584.0" y="747.0" class="value" text-anchor="start">70.68 G/s  4.7×</text>
 <line class="axis" x1="200" y1="652" x2="200" y2="756"/>
 <text x="16.0" y="777.0" class="group" text-anchor="start">jpeg/downsample h2v2</text>
 <text x="190.0" y="803.0" class="name" text-anchor="end">scalar</text>
-<path class="l0" d="M200.0,791.0 h99.1 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-99.1 z"><title>scalar: 22.12 G/s  1.0×</title></path>
-<text x="311.1" y="803.0" class="value" text-anchor="start">22.12 G/s  1.0×</text>
+<path class="l0" d="M200.0,791.0 h101.6 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-101.6 z"><title>scalar: 22.03 G/s  1.0×</title></path>
+<text x="313.6" y="803.0" class="value" text-anchor="start">22.03 G/s  1.0×</text>
 <text x="190.0" y="829.0" class="name" text-anchor="end">sse41</text>
-<path class="l1" d="M200.0,817.0 h177.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-177.0 z"><title>sse41: 38.83 G/s  1.8×</title></path>
-<text x="389.0" y="829.0" class="value" text-anchor="start">38.83 G/s  1.8×</text>
+<path class="l1" d="M200.0,817.0 h192.2 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-192.2 z"><title>sse41: 40.95 G/s  1.9×</title></path>
+<text x="404.2" y="829.0" class="value" text-anchor="start">40.95 G/s  1.9×</text>
 <text x="190.0" y="855.0" class="name" text-anchor="end">avx2</text>
-<path class="l2" d="M200.0,843.0 h337.4 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-337.4 z"><title>avx2: 73.22 G/s  3.3×</title></path>
-<text x="549.4" y="855.0" class="value" text-anchor="start">73.22 G/s  3.3×</text>
+<path class="l2" d="M200.0,843.0 h344.5 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-344.5 z"><title>avx2: 72.72 G/s  3.3×</title></path>
+<text x="556.5" y="855.0" class="value" text-anchor="start">72.72 G/s  3.3×</text>
 <text x="190.0" y="881.0" class="name" text-anchor="end">avx512</text>
-<path class="l3" d="M200.0,869.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>avx512: 89.22 G/s  4.0×</title></path>
-<text x="624.0" y="881.0" class="value" text-anchor="start">89.22 G/s  4.0×</text>
+<path class="l3" d="M200.0,869.0 h372.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-372.0 z"><title>avx512: 78.45 G/s  3.6×</title></path>
+<text x="584.0" y="881.0" class="value" text-anchor="start">78.45 G/s  3.6×</text>
 <line class="axis" x1="200" y1="786" x2="200" y2="890"/>
 <text x="16.0" y="911.0" class="group" text-anchor="start">jpeg/fdct+quantize</text>
 <text x="190.0" y="937.0" class="name" text-anchor="end">scalar</text>
-<path class="l0" d="M200.0,925.0 h18.3 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-18.3 z"><title>scalar: 0.34 G/s  1.0×</title></path>
-<text x="230.3" y="937.0" class="value" text-anchor="start">0.34 G/s  1.0×</text>
+<path class="l0" d="M200.0,925.0 h16.5 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-16.5 z"><title>scalar: 0.35 G/s  1.0×</title></path>
+<text x="228.5" y="937.0" class="value" text-anchor="start">0.35 G/s  1.0×</text>
 <text x="190.0" y="963.0" class="name" text-anchor="end">sse41</text>
-<path class="l1" d="M200.0,951.0 h146.3 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-146.3 z"><title>sse41: 2.30 G/s  6.8×</title></path>
-<text x="358.3" y="963.0" class="value" text-anchor="start">2.30 G/s  6.8×</text>
+<path class="l1" d="M200.0,951.0 h132.2 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-132.2 z"><title>sse41: 2.30 G/s  6.6×</title></path>
+<text x="344.2" y="963.0" class="value" text-anchor="start">2.30 G/s  6.6×</text>
 <text x="190.0" y="989.0" class="name" text-anchor="end">avx2</text>
-<path class="l2" d="M200.0,977.0 h231.5 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-231.5 z"><title>avx2: 3.60 G/s  10.6×</title></path>
-<text x="443.5" y="989.0" class="value" text-anchor="start">3.60 G/s  10.6×</text>
+<path class="l2" d="M200.0,977.0 h209.4 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-209.4 z"><title>avx2: 3.60 G/s  10.4×</title></path>
+<text x="421.4" y="989.0" class="value" text-anchor="start">3.60 G/s  10.4×</text>
 <text x="190.0" y="1015.0" class="name" text-anchor="end">avx512</text>
-<path class="l3" d="M200.0,1003.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>avx512: 6.36 G/s  18.7×</title></path>
-<text x="624.0" y="1015.0" class="value" text-anchor="start">6.36 G/s  18.7×</text>
+<path class="l3" d="M200.0,1003.0 h372.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-372.0 z"><title>avx512: 6.34 G/s  18.3×</title></path>
+<text x="584.0" y="1015.0" class="value" text-anchor="start">6.34 G/s  18.3×</text>
 <line class="axis" x1="200" y1="920" x2="200" y2="1024"/>
 <text x="16.0" y="1045.0" class="group" text-anchor="start">jpeg/idct</text>
 <text x="190.0" y="1071.0" class="name" text-anchor="end">scalar</text>
-<path class="l0" d="M200.0,1059.0 h49.4 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-49.4 z"><title>scalar: 1.00 G/s  1.0×</title></path>
-<text x="261.4" y="1071.0" class="value" text-anchor="start">1.00 G/s  1.0×</text>
+<path class="l0" d="M200.0,1059.0 h43.7 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-43.7 z"><title>scalar: 0.99 G/s  1.0×</title></path>
+<text x="255.7" y="1071.0" class="value" text-anchor="start">0.99 G/s  1.0×</text>
 <text x="190.0" y="1097.0" class="name" text-anchor="end">sse41</text>
-<path class="l1" d="M200.0,1085.0 h141.3 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-141.3 z"><title>sse41: 2.72 G/s  2.7×</title></path>
-<text x="353.3" y="1097.0" class="value" text-anchor="start">2.72 G/s  2.7×</text>
+<path class="l1" d="M200.0,1085.0 h126.1 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-126.1 z"><title>sse41: 2.70 G/s  2.7×</title></path>
+<text x="338.1" y="1097.0" class="value" text-anchor="start">2.70 G/s  2.7×</text>
 <text x="190.0" y="1123.0" class="name" text-anchor="end">avx2</text>
-<path class="l2" d="M200.0,1111.0 h216.8 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-216.8 z"><title>avx2: 4.14 G/s  4.1×</title></path>
-<text x="428.8" y="1123.0" class="value" text-anchor="start">4.14 G/s  4.1×</text>
+<path class="l2" d="M200.0,1111.0 h194.8 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-194.8 z"><title>avx2: 4.12 G/s  4.2×</title></path>
+<text x="406.8" y="1123.0" class="value" text-anchor="start">4.12 G/s  4.2×</text>
 <text x="190.0" y="1149.0" class="name" text-anchor="end">avx512</text>
-<path class="l3" d="M200.0,1137.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>avx512: 7.80 G/s  7.8×</title></path>
-<text x="624.0" y="1149.0" class="value" text-anchor="start">7.80 G/s  7.8×</text>
+<path class="l3" d="M200.0,1137.0 h372.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-372.0 z"><title>avx512: 7.80 G/s  7.9×</title></path>
+<text x="584.0" y="1149.0" class="value" text-anchor="start">7.80 G/s  7.9×</text>
 <line class="axis" x1="200" y1="1054" x2="200" y2="1158"/>
 <text x="16.0" y="1179.0" class="group" text-anchor="start">jpeg/rgb-&gt;ycbcr</text>
 <text x="190.0" y="1205.0" class="name" text-anchor="end">scalar</text>
-<path class="l0" d="M200.0,1193.0 h61.5 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-61.5 z"><title>scalar: 1.74 G/s  1.0×</title></path>
-<text x="273.5" y="1205.0" class="value" text-anchor="start">1.74 G/s  1.0×</text>
+<path class="l0" d="M200.0,1193.0 h49.4 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-49.4 z"><title>scalar: 1.48 G/s  1.0×</title></path>
+<text x="261.4" y="1205.0" class="value" text-anchor="start">1.48 G/s  1.0×</text>
 <text x="190.0" y="1231.0" class="name" text-anchor="end">sse41</text>
-<path class="l1" d="M200.0,1219.0 h107.7 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-107.7 z"><title>sse41: 2.97 G/s  1.7×</title></path>
-<text x="319.7" y="1231.0" class="value" text-anchor="start">2.97 G/s  1.7×</text>
+<path class="l1" d="M200.0,1219.0 h79.6 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-79.6 z"><title>sse41: 2.31 G/s  1.6×</title></path>
+<text x="291.6" y="1231.0" class="value" text-anchor="start">2.31 G/s  1.6×</text>
 <text x="190.0" y="1257.0" class="name" text-anchor="end">avx2</text>
-<path class="l2" d="M200.0,1245.0 h192.8 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-192.8 z"><title>avx2: 5.23 G/s  3.0×</title></path>
-<text x="404.8" y="1257.0" class="value" text-anchor="start">5.23 G/s  3.0×</text>
+<path class="l2" d="M200.0,1245.0 h172.7 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-172.7 z"><title>avx2: 4.88 G/s  3.3×</title></path>
+<text x="384.7" y="1257.0" class="value" text-anchor="start">4.88 G/s  3.3×</text>
 <text x="190.0" y="1283.0" class="name" text-anchor="end">avx512</text>
-<path class="l3" d="M200.0,1271.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>avx512: 11.06 G/s  6.4×</title></path>
-<text x="624.0" y="1283.0" class="value" text-anchor="start">11.06 G/s  6.4×</text>
+<path class="l3" d="M200.0,1271.0 h372.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-372.0 z"><title>avx512: 10.39 G/s  7.0×</title></path>
+<text x="584.0" y="1283.0" class="value" text-anchor="start">10.39 G/s  7.0×</text>
 <line class="axis" x1="200" y1="1188" x2="200" y2="1292"/>
 <text x="16.0" y="1313.0" class="group" text-anchor="start">jpeg/upsample h2v1</text>
 <text x="190.0" y="1339.0" class="name" text-anchor="end">scalar</text>
-<path class="l0" d="M200.0,1327.0 h72.8 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-72.8 z"><title>scalar: 8.60 G/s  1.0×</title></path>
-<text x="284.8" y="1339.0" class="value" text-anchor="start">8.60 G/s  1.0×</text>
+<path class="l0" d="M200.0,1327.0 h64.4 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-64.4 z"><title>scalar: 8.51 G/s  1.0×</title></path>
+<text x="276.4" y="1339.0" class="value" text-anchor="start">8.51 G/s  1.0×</text>
 <text x="190.0" y="1365.0" class="name" text-anchor="end">sse41</text>
-<path class="l1" d="M200.0,1353.0 h144.4 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-144.4 z"><title>sse41: 16.62 G/s  1.9×</title></path>
-<text x="356.4" y="1365.0" class="value" text-anchor="start">16.62 G/s  1.9×</text>
+<path class="l1" d="M200.0,1353.0 h125.6 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-125.6 z"><title>sse41: 16.12 G/s  1.9×</title></path>
+<text x="337.6" y="1365.0" class="value" text-anchor="start">16.12 G/s  1.9×</text>
 <text x="190.0" y="1391.0" class="name" text-anchor="end">avx2</text>
-<path class="l2" d="M200.0,1379.0 h282.6 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-282.6 z"><title>avx2: 32.09 G/s  3.7×</title></path>
-<text x="494.6" y="1391.0" class="value" text-anchor="start">32.09 G/s  3.7×</text>
+<path class="l2" d="M200.0,1379.0 h253.4 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-253.4 z"><title>avx2: 32.01 G/s  3.8×</title></path>
+<text x="465.4" y="1391.0" class="value" text-anchor="start">32.01 G/s  3.8×</text>
 <text x="190.0" y="1417.0" class="name" text-anchor="end">avx512</text>
-<path class="l3" d="M200.0,1405.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>avx512: 46.58 G/s  5.4×</title></path>
-<text x="624.0" y="1417.0" class="value" text-anchor="start">46.58 G/s  5.4×</text>
+<path class="l3" d="M200.0,1405.0 h372.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-372.0 z"><title>avx512: 46.76 G/s  5.5×</title></path>
+<text x="584.0" y="1417.0" class="value" text-anchor="start">46.76 G/s  5.5×</text>
 <line class="axis" x1="200" y1="1322" x2="200" y2="1426"/>
 <text x="16.0" y="1447.0" class="group" text-anchor="start">jpeg/upsample h2v2</text>
 <text x="190.0" y="1473.0" class="name" text-anchor="end">scalar</text>
-<path class="l0" d="M200.0,1461.0 h77.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-77.0 z"><title>scalar: 4.97 G/s  1.0×</title></path>
-<text x="289.0" y="1473.0" class="value" text-anchor="start">4.97 G/s  1.0×</text>
+<path class="l0" d="M200.0,1461.0 h70.8 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-70.8 z"><title>scalar: 4.96 G/s  1.0×</title></path>
+<text x="282.8" y="1473.0" class="value" text-anchor="start">4.96 G/s  1.0×</text>
 <text x="190.0" y="1499.0" class="name" text-anchor="end">sse41</text>
-<path class="l1" d="M200.0,1487.0 h163.4 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-163.4 z"><title>sse41: 10.27 G/s  2.1×</title></path>
-<text x="375.4" y="1499.0" class="value" text-anchor="start">10.27 G/s  2.1×</text>
+<path class="l1" d="M200.0,1487.0 h145.6 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-145.6 z"><title>sse41: 9.93 G/s  2.0×</title></path>
+<text x="357.6" y="1499.0" class="value" text-anchor="start">9.93 G/s  2.0×</text>
 <text x="190.0" y="1525.0" class="name" text-anchor="end">avx2</text>
-<path class="l2" d="M200.0,1513.0 h309.5 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-309.5 z"><title>avx2: 19.24 G/s  3.9×</title></path>
-<text x="521.5" y="1525.0" class="value" text-anchor="start">19.24 G/s  3.9×</text>
+<path class="l2" d="M200.0,1513.0 h283.3 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-283.3 z"><title>avx2: 19.07 G/s  3.8×</title></path>
+<text x="495.3" y="1525.0" class="value" text-anchor="start">19.07 G/s  3.8×</text>
 <text x="190.0" y="1551.0" class="name" text-anchor="end">avx512</text>
-<path class="l3" d="M200.0,1539.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>avx512: 25.53 G/s  5.1×</title></path>
-<text x="624.0" y="1551.0" class="value" text-anchor="start">25.53 G/s  5.1×</text>
+<path class="l3" d="M200.0,1539.0 h372.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-372.0 z"><title>avx512: 24.95 G/s  5.0×</title></path>
+<text x="584.0" y="1551.0" class="value" text-anchor="start">24.95 G/s  5.0×</text>
 <line class="axis" x1="200" y1="1456" x2="200" y2="1560"/>
 <text x="16.0" y="1581.0" class="group" text-anchor="start">jpeg/ycbcr-&gt;rgb</text>
 <text x="190.0" y="1607.0" class="name" text-anchor="end">scalar</text>
-<path class="l0" d="M200.0,1595.0 h43.7 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-43.7 z"><title>scalar: 1.04 G/s  1.0×</title></path>
-<text x="255.7" y="1607.0" class="value" text-anchor="start">1.04 G/s  1.0×</text>
+<path class="l0" d="M200.0,1595.0 h41.6 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-41.6 z"><title>scalar: 1.01 G/s  1.0×</title></path>
+<text x="253.6" y="1607.0" class="value" text-anchor="start">1.01 G/s  1.0×</text>
 <text x="190.0" y="1633.0" class="name" text-anchor="end">sse41</text>
-<path class="l1" d="M200.0,1621.0 h124.8 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-124.8 z"><title>sse41: 2.80 G/s  2.7×</title></path>
-<text x="336.8" y="1633.0" class="value" text-anchor="start">2.80 G/s  2.7×</text>
+<path class="l1" d="M200.0,1621.0 h114.1 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-114.1 z"><title>sse41: 2.62 G/s  2.6×</title></path>
+<text x="326.1" y="1633.0" class="value" text-anchor="start">2.62 G/s  2.6×</text>
 <text x="190.0" y="1659.0" class="name" text-anchor="end">avx2</text>
-<path class="l2" d="M200.0,1647.0 h229.1 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-229.1 z"><title>avx2: 5.06 G/s  4.9×</title></path>
-<text x="441.1" y="1659.0" class="value" text-anchor="start">5.06 G/s  4.9×</text>
+<path class="l2" d="M200.0,1647.0 h203.1 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-203.1 z"><title>avx2: 4.60 G/s  4.5×</title></path>
+<text x="415.1" y="1659.0" class="value" text-anchor="start">4.60 G/s  4.5×</text>
 <text x="190.0" y="1685.0" class="name" text-anchor="end">avx512</text>
-<path class="l3" d="M200.0,1673.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>avx512: 9.03 G/s  8.7×</title></path>
-<text x="624.0" y="1685.0" class="value" text-anchor="start">9.03 G/s  8.7×</text>
+<path class="l3" d="M200.0,1673.0 h372.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-372.0 z"><title>avx512: 8.34 G/s  8.2×</title></path>
+<text x="584.0" y="1685.0" class="value" text-anchor="start">8.34 G/s  8.2×</text>
 <line class="axis" x1="200" y1="1590" x2="200" y2="1694"/>
 </svg>

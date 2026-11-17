@@ -61,7 +61,7 @@ STYLE = """
 
 W = 760
 LABEL_W = 200
-VALUE_W = 120
+VALUE_W = 160
 BAR_W = W - LABEL_W - VALUE_W - 24
 ROW = 26
 BAR = 16
