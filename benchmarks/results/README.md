@@ -10,9 +10,9 @@ see [../README.md](../README.md) for the method and inputs.
 
 | Benchmark | Implementation | Mpixel/s | Compression ratio |
 |---|---|---|---|
-| Decode · JPLL lossless | **dicom-jpeg** | 119.0 |  |
-| Decode · JPLL lossless | libjpeg-turbo | 288.1 |  |
-| Decode · JPLL lossless | jpeg-decoder | 124.1 |  |
+| Decode · JPLL lossless | **dicom-jpeg** | 383.0 |  |
+| Decode · JPLL lossless | libjpeg-turbo | 287.8 |  |
+| Decode · JPLL lossless | jpeg-decoder | 130.8 |  |
 | Decode · JPLY 12-bit | **dicom-jpeg** | 583.2 |  |
 | Decode · JPLY 12-bit | libjpeg-turbo | 682.9 |  |
 | Decode · REF 8-bit q90 (libjpeg-turbo) | **dicom-jpeg** | 459.8 |  |
