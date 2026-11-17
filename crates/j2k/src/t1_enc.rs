@@ -3,13 +3,9 @@
 
 use super::mq::{CTX_RL, CTX_UNI, Context, MqEncoder, NUM_CONTEXTS, initial_contexts};
 use super::t1::{
-    N_E, N_N, N_NE, N_NW, N_S, N_SE, N_SW, N_W, NEG_E, NEG_N, NEG_S, NEG_W, Orient, sc_context,
-    zc_context,
+    N_E, N_N, N_NE, N_NW, N_S, N_SE, N_SW, N_W, NEG_E, NEG_N, NEG_S, NEG_W, Orient, REFINED,
+    SC_LUT, SIG, VISIT, ZC_LUT, sc_index,
 };
-
-const SIG: u8 = 1;
-const VISIT: u8 = 4;
-const REFINED: u8 = 8;
 
 /// A coded code-block.
 #[derive(Debug, Clone, Default)]
@@ -25,61 +21,58 @@ struct Block<'a> {
     w: usize,
     h: usize,
     stride: usize,
-    flags: Vec<u8>,
-    nb: Vec<u16>,
+    /// State words (flags and neighbourhood bits, as in `t1`) with a
+    /// one-sample border.
+    st: Vec<u32>,
     mag: &'a [u32],
     neg: &'a [bool],
-    orient: Orient,
+    zc: &'static [u8; 256],
     ctx: [Context; NUM_CONTEXTS],
     mq: MqEncoder,
 }
 
 impl Block<'_> {
-    #[inline]
+    #[inline(always)]
     fn idx(&self, x: usize, y: usize) -> usize {
         (y + 1) * self.stride + x + 1
     }
 
-    #[inline]
-    fn counts(&self, i: usize) -> (u32, u32, u32) {
-        let w = self.nb[i];
-        (
-            (w & (N_W | N_E)).count_ones(),
-            (w & (N_N | N_S)).count_ones(),
-            (w & (N_NW | N_NE | N_SW | N_SE)).count_ones(),
-        )
+    #[inline(always)]
+    fn encode_sign(&mut self, w: u32, negative: bool) {
+        let e = SC_LUT[sc_index(w as u16)];
+        let xor = (e >> 7) as u32;
+        self.mq
+            .encode(&mut self.ctx[(e & 0x7F) as usize], negative as u32 ^ xor);
     }
 
-    fn encode_sign(&mut self, i: usize, negative: bool) {
-        let w = self.nb[i];
-        let contrib = |sig: u16, neg: u16| -> i32 {
-            if w & sig == 0 {
-                0
-            } else if w & neg != 0 {
-                -1
-            } else {
-                1
-            }
-        };
-        let h = (contrib(N_W, NEG_W) + contrib(N_E, NEG_E)).clamp(-1, 1);
-        let v = (contrib(N_N, NEG_N) + contrib(N_S, NEG_S)).clamp(-1, 1);
-        let (cx, xor) = sc_context(h, v);
-        self.mq.encode(&mut self.ctx[cx], negative as u32 ^ xor);
-    }
-
+    #[inline(always)]
     fn set_significant(&mut self, i: usize, negative: bool) {
-        self.flags[i] |= SIG;
+        self.st[i] |= SIG;
         let s = self.stride;
-        let n = |bit: u16| if negative { bit } else { 0 };
-        let nb = &mut self.nb;
-        nb[i + 1] |= N_W | n(NEG_W);
-        nb[i - 1] |= N_E | n(NEG_E);
-        nb[i + s] |= N_N | n(NEG_N);
-        nb[i - s] |= N_S | n(NEG_S);
-        nb[i + s + 1] |= N_NW;
-        nb[i + s - 1] |= N_NE;
-        nb[i - s + 1] |= N_SW;
-        nb[i - s - 1] |= N_SE;
+        let n = |bit: u16| if negative { bit as u32 } else { 0 };
+        let st = &mut self.st;
+        st[i + 1] |= N_W as u32 | n(NEG_W);
+        st[i - 1] |= N_E as u32 | n(NEG_E);
+        st[i + s] |= N_N as u32 | n(NEG_N);
+        st[i - s] |= N_S as u32 | n(NEG_S);
+        st[i + s + 1] |= N_NW as u32;
+        st[i + s - 1] |= N_NE as u32;
+        st[i - s + 1] |= N_SW as u32;
+        st[i - s - 1] |= N_SE as u32;
+    }
+
+    /// Zero-code the bit of sample `k` (state `w` at `i`); sign-code and
+    /// mark it if it becomes significant.
+    #[inline(always)]
+    fn zero_code(&mut self, i: usize, k: usize, w: u32, p: u32) {
+        let bit = (self.mag[k] >> p) & 1;
+        let cx = self.zc[(w & 0xFF) as usize] as usize;
+        self.mq.encode(&mut self.ctx[cx], bit);
+        if bit == 1 {
+            let neg = self.neg[k];
+            self.encode_sign(w, neg);
+            self.set_significant(i, neg);
+        }
     }
 
     fn significance_pass(&mut self, p: u32) {
@@ -87,19 +80,12 @@ impl Block<'_> {
             for x in 0..self.w {
                 for y in s..(s + 4).min(self.h) {
                     let i = self.idx(x, y);
-                    if self.flags[i] & SIG != 0 || self.nb[i] & 0xFF == 0 {
+                    let w = self.st[i];
+                    if w & SIG != 0 || w & 0xFF == 0 {
                         continue;
                     }
-                    let k = y * self.w + x;
-                    let bit = (self.mag[k] >> p) & 1;
-                    let (h, v, d) = self.counts(i);
-                    self.mq
-                        .encode(&mut self.ctx[zc_context(self.orient, h, v, d)], bit);
-                    if bit == 1 {
-                        self.encode_sign(i, self.neg[k]);
-                        self.set_significant(i, self.neg[k]);
-                    }
-                    self.flags[i] |= VISIT;
+                    self.zero_code(i, y * self.w + x, w, p);
+                    self.st[i] |= VISIT;
                 }
             }
         }
@@ -110,20 +96,20 @@ impl Block<'_> {
             for x in 0..self.w {
                 for y in s..(s + 4).min(self.h) {
                     let i = self.idx(x, y);
-                    let f = self.flags[i];
-                    if f & SIG == 0 || f & VISIT != 0 {
+                    let w = self.st[i];
+                    if w & SIG == 0 || w & VISIT != 0 {
                         continue;
                     }
-                    let cx = if f & REFINED != 0 {
+                    let cx = if w & REFINED != 0 {
                         16
-                    } else if self.nb[i] & 0xFF == 0 {
+                    } else if w & 0xFF == 0 {
                         14
                     } else {
                         15
                     };
                     let bit = (self.mag[y * self.w + x] >> p) & 1;
                     self.mq.encode(&mut self.ctx[cx], bit);
-                    self.flags[i] |= REFINED;
+                    self.st[i] |= REFINED;
                 }
             }
         }
@@ -134,12 +120,7 @@ impl Block<'_> {
             let full = s + 4 <= self.h;
             for x in 0..self.w {
                 let mut start = s;
-                if full
-                    && (s..s + 4).all(|y| {
-                        let i = self.idx(x, y);
-                        self.flags[i] & (SIG | VISIT) == 0 && self.nb[i] & 0xFF == 0
-                    })
-                {
+                if full && (s..s + 4).all(|y| self.st[self.idx(x, y)] & (SIG | VISIT | 0xFF) == 0) {
                     let first = (s..s + 4).position(|y| (self.mag[y * self.w + x] >> p) & 1 == 1);
                     match first {
                         None => {
@@ -153,7 +134,7 @@ impl Block<'_> {
                             let y = s + r;
                             let i = self.idx(x, y);
                             let neg = self.neg[y * self.w + x];
-                            self.encode_sign(i, neg);
+                            self.encode_sign(self.st[i], neg);
                             self.set_significant(i, neg);
                             start = y + 1;
                         }
@@ -161,22 +142,15 @@ impl Block<'_> {
                 }
                 for y in start..(s + 4).min(self.h) {
                     let i = self.idx(x, y);
-                    if self.flags[i] & (SIG | VISIT) == 0 {
-                        let k = y * self.w + x;
-                        let bit = (self.mag[k] >> p) & 1;
-                        let (h, v, d) = self.counts(i);
-                        self.mq
-                            .encode(&mut self.ctx[zc_context(self.orient, h, v, d)], bit);
-                        if bit == 1 {
-                            self.encode_sign(i, self.neg[k]);
-                            self.set_significant(i, self.neg[k]);
-                        }
+                    let w = self.st[i];
+                    if w & (SIG | VISIT) == 0 {
+                        self.zero_code(i, y * self.w + x, w, p);
                     }
-                    self.flags[i] &= !VISIT;
+                    self.st[i] &= !VISIT;
                 }
                 for y in s..start {
                     let i = self.idx(x, y);
-                    self.flags[i] &= !VISIT;
+                    self.st[i] &= !VISIT;
                 }
             }
         }
@@ -197,11 +171,10 @@ pub(crate) fn encode(w: usize, h: usize, orient: Orient, coefs: &[i32]) -> Encod
         w,
         h,
         stride,
-        flags: vec![0; stride * (h + 2)],
-        nb: vec![0; stride * (h + 2)],
+        st: vec![0; stride * (h + 2)],
         mag: &mag,
         neg: &neg,
-        orient,
+        zc: &ZC_LUT[orient as usize],
         ctx: initial_contexts(),
         mq: MqEncoder::new(),
     };

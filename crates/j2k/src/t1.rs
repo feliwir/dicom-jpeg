@@ -96,7 +96,7 @@ pub(crate) const fn sc_context(h: i32, v: i32) -> (usize, u32) {
 
 /// Zero-coding contexts per orientation (`Orient as usize`), indexed by the
 /// 8 neighbour significance bits of a neighbourhood word.
-static ZC_LUT: [[u8; 256]; 4] = [
+pub(crate) static ZC_LUT: [[u8; 256]; 4] = [
     zc_lut(Orient::LL),
     zc_lut(Orient::HL),
     zc_lut(Orient::LH),
@@ -120,7 +120,7 @@ const fn zc_lut(orient: Orient) -> [u8; 256] {
 /// Sign-coding context (low 7 bits) and XOR bit (bit 7), indexed by the
 /// significance (bits 0..4) and sign (bits 4..8) of the W, E, N, S
 /// neighbours: [`sc_index`].
-static SC_LUT: [u8; 256] = sc_lut();
+pub(crate) static SC_LUT: [u8; 256] = sc_lut();
 
 const fn sc_lut() -> [u8; 256] {
     /// -1, 0 or 1: the contribution of a neighbour (significance bit `sig`,
@@ -157,7 +157,7 @@ const fn sc_lut() -> [u8; 256] {
 
 /// The [`SC_LUT`] index of a neighbourhood word.
 #[inline]
-fn sc_index(w: u16) -> usize {
+pub(crate) fn sc_index(w: u16) -> usize {
     ((w & 0xF) | ((w >> 4) & 0xF0)) as usize
 }
 
@@ -174,10 +174,10 @@ thread_local! {
 
 // Per-sample state word: the neighbourhood bits (`N_*`, `NEG_*`, bits
 // 0..12) and the sample's own flags.
-const SIG: u32 = 1 << 12;
-const NEG: u32 = 1 << 13;
-const VISIT: u32 = 1 << 14;
-const REFINED: u32 = 1 << 15;
+pub(crate) const SIG: u32 = 1 << 12;
+pub(crate) const NEG: u32 = 1 << 13;
+pub(crate) const VISIT: u32 = 1 << 14;
+pub(crate) const REFINED: u32 = 1 << 15;
 
 /// A source of decisions: the MQ decoder, or raw (bypass) bits, which
 /// ignore the context.
