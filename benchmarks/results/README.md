@@ -47,20 +47,20 @@ see [../README.md](../README.md) for the method and inputs.
 
 | Benchmark | Implementation | Mpixel/s | Compression ratio |
 |---|---|---|---|
-| Decode · J2KI lossy | **dicom-jpeg** | 39.5 |  |
-| Decode · J2KI lossy | OpenJPEG | 65.5 |  |
-| Decode · J2KI lossy | hayro-jpeg2000 | 65.2 |  |
-| Decode · J2KI lossy | openjp2 | 44.3 |  |
-| Decode · J2KR lossless | **dicom-jpeg** | 10.7 |  |
-| Decode · J2KR lossless | OpenJPEG | 14.7 |  |
-| Decode · J2KR lossless | hayro-jpeg2000 | 14.7 |  |
-| Decode · J2KR lossless | openjp2 | 11.7 |  |
-| Encode · lossless | **dicom-jpeg** | 10.6 | 3.59 |
+| Decode · J2KI lossy | **dicom-jpeg** | 42.4 |  |
+| Decode · J2KI lossy | OpenJPEG | 65.8 |  |
+| Decode · J2KI lossy | hayro-jpeg2000 | 62.9 |  |
+| Decode · J2KI lossy | openjp2 | 43.2 |  |
+| Decode · J2KR lossless | **dicom-jpeg** | 10.8 |  |
+| Decode · J2KR lossless | OpenJPEG | 15.0 |  |
+| Decode · J2KR lossless | hayro-jpeg2000 | 14.0 |  |
+| Decode · J2KR lossless | openjp2 | 11.5 |  |
+| Encode · lossless | **dicom-jpeg** | 10.7 | 3.59 |
 | Encode · lossless | OpenJPEG | 14.1 | 3.59 |
-| Encode · lossless | openjp2 | 12.6 | 3.59 |
-| Encode · lossy (rate of dicom-jpeg q90) | **dicom-jpeg** | 15.4 | 10.01 |
-| Encode · lossy (rate of dicom-jpeg q90) | OpenJPEG | 14.9 | 10.01 |
-| Encode · lossy (rate of dicom-jpeg q90) | openjp2 | 12.1 | 10.01 |
+| Encode · lossless | openjp2 | 12.4 | 3.59 |
+| Encode · lossy (rate of dicom-jpeg q90) | **dicom-jpeg** | 15.3 | 10.01 |
+| Encode · lossy (rate of dicom-jpeg q90) | OpenJPEG | 14.7 | 10.01 |
+| Encode · lossy (rate of dicom-jpeg q90) | openjp2 | 12.2 | 10.01 |
 
 ## HTJ2K
 
@@ -68,17 +68,17 @@ see [../README.md](../README.md) for the method and inputs.
 
 | Benchmark | Implementation | Mpixel/s | Compression ratio |
 |---|---|---|---|
-| Decode · REF lossless | **dicom-jpeg** | 98.3 |  |
-| Decode · REF lossless | OpenJPEG | 131.2 |  |
-| Decode · REF lossless | openjp2 | 54.7 |  |
-| Decode · REF lossy | **dicom-jpeg** | 80.4 |  |
-| Decode · REF lossy | OpenJPEG | 124.1 |  |
-| Decode · REF lossy | openjp2 | 64.2 |  |
-| Decode · pydicom RGB | **dicom-jpeg** | 42.4 |  |
-| Decode · pydicom RGB | OpenJPEG | 60.0 |  |
-| Decode · pydicom RGB | openjp2 | 33.0 |  |
-| Encode · lossless | **dicom-jpeg** | 60.3 | 3.32 |
-| Encode · lossy | **dicom-jpeg** | 25.3 | 9.14 |
+| Decode · REF lossless | **dicom-jpeg** | 126.5 |  |
+| Decode · REF lossless | OpenJPEG | 125.8 |  |
+| Decode · REF lossless | openjp2 | 52.3 |  |
+| Decode · REF lossy | **dicom-jpeg** | 89.9 |  |
+| Decode · REF lossy | OpenJPEG | 120.4 |  |
+| Decode · REF lossy | openjp2 | 62.5 |  |
+| Decode · pydicom RGB | **dicom-jpeg** | 51.5 |  |
+| Decode · pydicom RGB | OpenJPEG | 59.6 |  |
+| Decode · pydicom RGB | openjp2 | 32.4 |  |
+| Encode · lossless | **dicom-jpeg** | 59.8 | 3.32 |
+| Encode · lossy | **dicom-jpeg** | 25.8 | 9.14 |
 
 ## JPEG XL
 
@@ -86,23 +86,23 @@ see [../README.md](../README.md) for the method and inputs.
 
 | Benchmark | Implementation | Mpixel/s | Compression ratio |
 |---|---|---|---|
-| Decode · REF lossless (dicom-jpeg) | **dicom-jpeg** | 25.0 |  |
-| Decode · REF lossless (dicom-jpeg) | jxl-rs | 43.2 |  |
-| Decode · REF lossless (dicom-jpeg) | libjxl | 33.2 |  |
-| Decode · REF lossless (dicom-jpeg) | jxl-oxide | 32.0 |  |
-| Decode · REF lossless (libjxl e7) | **dicom-jpeg** | 17.8 |  |
-| Decode · REF lossless (libjxl e7) | jxl-rs | 25.0 |  |
-| Decode · REF lossless (libjxl e7) | libjxl | 22.7 |  |
-| Decode · REF lossless (libjxl e7) | jxl-oxide | 19.8 |  |
-| Decode · REF lossy d1 (libjxl e7) | **dicom-jpeg** | 47.7 |  |
-| Decode · REF lossy d1 (libjxl e7) | jxl-rs | 153.1 |  |
-| Decode · REF lossy d1 (libjxl e7) | libjxl | 135.0 |  |
-| Decode · REF lossy d1 (libjxl e7) | jxl-oxide | 38.0 |  |
-| Encode · lossless | **dicom-jpeg** | 49.3 | 3.51 |
-| Encode · lossless | libjxl e1 | 590.8 | 3.70 |
-| Encode · lossless | zune-jpegxl | 144.6 | 3.67 |
-| Encode · lossless | libjxl e3 | 27.0 | 4.44 |
-| Encode · lossless | libjxl e7 | 4.5 | 5.45 |
+| Decode · REF lossless (dicom-jpeg) | **dicom-jpeg** | 23.6 |  |
+| Decode · REF lossless (dicom-jpeg) | jxl-rs | 40.8 |  |
+| Decode · REF lossless (dicom-jpeg) | libjxl | 32.4 |  |
+| Decode · REF lossless (dicom-jpeg) | jxl-oxide | 30.6 |  |
+| Decode · REF lossless (libjxl e7) | **dicom-jpeg** | 17.4 |  |
+| Decode · REF lossless (libjxl e7) | jxl-rs | 24.2 |  |
+| Decode · REF lossless (libjxl e7) | libjxl | 21.1 |  |
+| Decode · REF lossless (libjxl e7) | jxl-oxide | 19.1 |  |
+| Decode · REF lossy d1 (libjxl e7) | **dicom-jpeg** | 43.9 |  |
+| Decode · REF lossy d1 (libjxl e7) | jxl-rs | 149.9 |  |
+| Decode · REF lossy d1 (libjxl e7) | libjxl | 130.4 |  |
+| Decode · REF lossy d1 (libjxl e7) | jxl-oxide | 36.4 |  |
+| Encode · lossless | **dicom-jpeg** | 54.3 | 3.51 |
+| Encode · lossless | libjxl e1 | 539.5 | 3.70 |
+| Encode · lossless | zune-jpegxl | 144.1 | 3.67 |
+| Encode · lossless | libjxl e3 | 25.8 | 4.44 |
+| Encode · lossless | libjxl e7 | 4.4 | 5.45 |
 
 ## SIMD kernels
 
