@@ -21,6 +21,10 @@ pub(crate) struct HuffmanTable {
     /// together they fit the lookahead (as stb_image): `fast_ac[peek9] =
     /// value << 16 | run << 8 | total length`, 0 = not available.
     fast_ac: Box<[i32; 1 << LOOKAHEAD]>,
+    /// For lossless difference tables, the same with the category as the
+    /// symbol: `fast_diff[peek9] = value << 8 | total length`, 0 = not
+    /// available.
+    fast_diff: Box<[i32; 1 << LOOKAHEAD]>,
 }
 
 impl HuffmanTable {
@@ -71,12 +75,31 @@ impl HuffmanTable {
             let v = extend(m, s);
             *f = (v << 16) | (run << 8) | (len + s) as i32;
         }
+        let mut fast_diff = Box::new([0i32; 1 << LOOKAHEAD]);
+        for (i, f) in fast_diff.iter_mut().enumerate() {
+            let entry = lookup[i];
+            let (len, t) = ((entry >> 8) as u32, (entry & 0xFF) as u32);
+            // Category 16 is 32768 with no extra bits (H.1.2.2).
+            let (extra, v) = match t {
+                0 => (0, 0),
+                1..=15 if len + t <= LOOKAHEAD => {
+                    let m = ((i as u32) >> (LOOKAHEAD - len - t)) & ((1 << t) - 1);
+                    (t, extend(m, t))
+                }
+                16 => (0, 32768),
+                _ => continue,
+            };
+            if len > 0 {
+                *f = (v << 8) | (len + extra) as i32;
+            }
+        }
         Ok(HuffmanTable {
             lookup,
             maxcode,
             valoffset,
             values: values.to_vec(),
             fast_ac,
+            fast_diff,
         })
     }
 
@@ -90,6 +113,22 @@ impl HuffmanTable {
         }
         reader.consume((f & 0xFF) as u32);
         Some((((f >> 8) & 0xFF) as usize, f >> 16))
+    }
+
+    /// Decode a lossless difference: its category, then its extra bits
+    /// (H.1.2.2).
+    #[inline(always)]
+    pub(crate) fn decode_diff(&self, reader: &mut BitReader<'_>) -> Result<i32> {
+        let f = self.fast_diff[(reader.peek16() >> (16 - LOOKAHEAD)) as usize];
+        if f != 0 {
+            reader.consume((f & 0xFF) as u32);
+            return Ok(f >> 8);
+        }
+        match self.decode(reader)? as u32 {
+            t @ 0..=15 => Ok(reader.receive_extend(t)),
+            16 => Ok(32768),
+            _ => Err(Error::invalid(CODEC, "lossless difference category > 16")),
+        }
     }
 
     /// Decode one symbol.

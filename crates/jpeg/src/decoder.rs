@@ -671,12 +671,7 @@ impl<'a> Decoder<'a> {
                     _ => (ra + rb) >> 1,
                 }
             };
-            let t = tables[si].0.decode(reader)? as u32;
-            let diff = match t {
-                0..=15 => reader.receive_extend(t),
-                16 => 32768,
-                _ => return Err(Error::invalid(CODEC, "lossless difference category > 16")),
-            };
+            let diff = tables[si].0.decode_diff(reader)?;
             d[y * s + x] = (pred.wrapping_add(diff) & 0xFFFF) as u16;
             Ok(())
         };
@@ -684,19 +679,70 @@ impl<'a> Decoder<'a> {
         let restart = self.restart_interval;
         let mut rst_index = 0u8;
         if ns == 1 {
+            // One sample per MCU: decode each run of a row up to the next
+            // restart boundary as differences first, then reconstruct it.
             let c = &frame.components[scan.components[0].index];
             let (cw, ch) = frame.comp_size(c);
+            let table = tables[0].0;
+            let plane = &mut planes[scan.components[0].index];
+            let s = plane.stride;
+            let mut diff = vec![0i32; cw];
+            let (mut need_init, mut first_line) = (true, 0usize);
             let mut n = 0usize;
             for y in 0..ch {
-                for x in 0..cw {
+                let mut x0 = 0;
+                while x0 < cw {
                     if restart > 0 && n > 0 && n.is_multiple_of(restart) {
                         reader.restart();
                         rst_index = (rst_index + 1) & 7;
-                        need_init[0] = true;
-                        first_line[0] = y;
+                        need_init = true;
+                        first_line = y;
                     }
-                    decode_sample(&mut reader, 0, x, y, &first_line, &mut need_init)?;
-                    n += 1;
+                    let x1 = if restart > 0 {
+                        (x0 + restart - n % restart).min(cw)
+                    } else {
+                        cw
+                    };
+                    for d in &mut diff[x0..x1] {
+                        *d = table.decode_diff(&mut reader)?;
+                    }
+                    let (above, rest) = plane.data.split_at_mut(y * s);
+                    let row = &mut rest[..cw];
+                    let above = if y > 0 {
+                        &above[(y - 1) * s..][..cw]
+                    } else {
+                        &[][..]
+                    };
+                    // The first sample of the run: initial value after a
+                    // (re)start, left neighbour on the first line, above at
+                    // the start of a line.
+                    let pred = if need_init {
+                        need_init = false;
+                        initial
+                    } else if y == first_line {
+                        row[x0 - 1] as i32
+                    } else if x0 == 0 {
+                        above[0] as i32
+                    } else {
+                        predict(predictor, row[x0 - 1], above[x0], above[x0 - 1])
+                    };
+                    row[x0] = (pred.wrapping_add(diff[x0]) & 0xFFFF) as u16;
+                    let rest = (x0 + 1, x1);
+                    if y == first_line {
+                        undifference::<1>(row, above, &diff, rest);
+                    } else {
+                        match predictor {
+                            1 => undifference::<1>(row, above, &diff, rest),
+                            2 => undifference::<2>(row, above, &diff, rest),
+                            3 => undifference::<3>(row, above, &diff, rest),
+                            4 => undifference::<4>(row, above, &diff, rest),
+                            5 => undifference::<5>(row, above, &diff, rest),
+                            6 => undifference::<6>(row, above, &diff, rest),
+                            _ => undifference::<7>(row, above, &diff, rest),
+                        }
+                    }
+                    n += x1 - x0;
+                    x0 = x1;
                 }
             }
         } else {
@@ -857,6 +903,42 @@ impl<'a> Decoder<'a> {
             }
         }
         out
+    }
+}
+
+/// Lossless prediction (H.1.2.1, Table H.1) from the left (`ra`), above
+/// (`rb`) and above-left (`rc`) samples.
+#[inline(always)]
+fn predict(predictor: u8, ra: u16, rb: u16, rc: u16) -> i32 {
+    let (ra, rb, rc) = (ra as i32, rb as i32, rc as i32);
+    match predictor {
+        1 => ra,
+        2 => rb,
+        3 => rc,
+        4 => ra + rb - rc,
+        5 => ra + ((rb - rc) >> 1),
+        6 => rb + ((ra - rc) >> 1),
+        _ => (ra + rb) >> 1,
+    }
+}
+
+/// Reconstruct `row[x0..x1]` (`x0 >= 1`) from the differences with
+/// predictor `P`; `above` is the previous row (unused by predictor 1).
+#[inline(always)]
+fn undifference<const P: u8>(
+    row: &mut [u16],
+    above: &[u16],
+    diff: &[i32],
+    (x0, x1): (usize, usize),
+) {
+    for x in x0..x1 {
+        let (rb, rc) = if P == 1 {
+            (0, 0)
+        } else {
+            (above[x], above[x - 1])
+        };
+        let pred = predict(P, row[x - 1], rb, rc);
+        row[x] = (pred.wrapping_add(diff[x]) & 0xFFFF) as u16;
     }
 }
 
