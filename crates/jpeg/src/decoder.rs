@@ -3,9 +3,10 @@
 
 use super::CODEC;
 use super::bitreader::BitReader;
-use super::color::{Plane, Sample, Upsampler, ycbcr_to_rgb};
+use super::color::{Plane, Sample, Upsampler};
 use super::huffman::HuffmanTable;
 use super::idct::idct_blocks;
+use super::ycbcr::ycbcr_to_rgb;
 use dicom_jpeg_common::simd::{self, Level};
 use dicom_jpeg_common::{
     ColorOutput, ColorSpace, DecodeOptions, Image, ImageInfo, Limits, Samples,
@@ -801,13 +802,23 @@ impl<'a> Decoder<'a> {
         let frame = self.frame.as_ref().expect("frame");
         let (w, h) = (frame.width, frame.height);
         let nc = frame.components.len();
+        let level = simd::level();
         let mut ups: Vec<Upsampler> = frame
             .components
             .iter()
             .zip(&self.planes)
-            .map(|(c, p)| Upsampler::new(p, (c.h, c.v), (frame.hmax, frame.vmax), w))
+            .map(|(c, p)| {
+                let factors = (frame.hmax, frame.vmax);
+                Upsampler::new(p, (c.h, c.v), factors, w, level, frame.precision)
+            })
             .collect();
         let mut out = vec![S::default(); w * h * nc];
+        // Converted RGB rows.
+        let mut rgb = if convert {
+            vec![vec![0u16; w]; 3]
+        } else {
+            Vec::new()
+        };
         for (y, dst) in out.chunks_exact_mut(w * nc).enumerate() {
             if nc == 1 {
                 let src = ups[0].row(&self.planes[0], y);
@@ -816,18 +827,26 @@ impl<'a> Decoder<'a> {
                 }
                 continue;
             }
-            if convert {
+            if nc == 3 {
                 let [u0, u1, u2] = &mut ups[..] else {
                     unreachable!("three components")
                 };
                 let (p0, p1, p2) = (&self.planes[0], &self.planes[1], &self.planes[2]);
-                ycbcr_to_rgb(
+                let rows = [
                     &u0.row(p0, y)[..w],
                     &u1.row(p1, y)[..w],
                     &u2.row(p2, y)[..w],
-                    frame.precision,
-                    dst,
-                );
+                ];
+                let [r, g, b] = if convert {
+                    let [r, g, b] = &mut rgb[..] else {
+                        unreachable!("three rows")
+                    };
+                    ycbcr_to_rgb(level, rows, frame.precision, [r, g, b]);
+                    [&r[..], &g[..], &b[..]]
+                } else {
+                    rows
+                };
+                S::interleave3(level, r, g, b, dst);
                 continue;
             }
             for (ci, (up, plane)) in ups.iter_mut().zip(&self.planes).enumerate() {

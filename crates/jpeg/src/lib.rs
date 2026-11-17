@@ -18,6 +18,8 @@ mod huffman;
 #[cfg(feature = "encode")]
 mod huffman_encode;
 mod idct;
+mod upsample;
+mod ycbcr;
 
 #[cfg(feature = "encode")]
 pub use encoder::{ChromaSubsampling, EncoderOptions, Process, encode_with};
