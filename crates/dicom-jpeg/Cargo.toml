@@ -36,8 +36,6 @@ encode = [
 dicom = ["dep:dicom-jpeg-dicom"]
 # Register the dicom-rs adapter in the dicom-rs transfer syntax registry.
 inventory-registry = ["dicom", "dicom-jpeg-dicom/inventory-registry"]
-# Data parallelism (tiles, code-blocks, frames)
-parallel = ["dep:rayon"]
 
 [dependencies]
 dicom-jpeg-common.workspace = true
@@ -46,7 +44,6 @@ dicom-jpeg-jpegls = { workspace = true, optional = true }
 dicom-jpeg-j2k = { workspace = true, optional = true }
 dicom-jpeg-jxl = { workspace = true, optional = true }
 dicom-jpeg-dicom = { workspace = true, optional = true }
-rayon = { version = "1.10", optional = true }
 
 [dev-dependencies]
 dicom-core.workspace = true

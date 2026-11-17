@@ -33,7 +33,7 @@ jobs:
       - uses: taiki-e/install-action@cargo-hack
       - uses: Swatinem/rust-cache@v2
       - run: cargo hack check --workspace --each-feature --no-dev-deps --exclude dicom-jpeg-benchmarks
-      - run: cargo hack check -p dicom-jpeg --all-targets --feature-powerset --depth 2 --exclude-features parallel
+      - run: cargo hack check -p dicom-jpeg --all-targets --feature-powerset --depth 2
 
   test:
     # Unit tests compare every SIMD level the runner supports with the

@@ -449,7 +449,6 @@ dependencies = [
  "jpeg-decoder",
  "jxl-oxide",
  "png",
- "rayon",
 ]
 
 [[package]]

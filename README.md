@@ -17,7 +17,6 @@ Other features:
 * `encode`: enables the encoders.
 * `dicom`: dicom-rs `PixelDataReader` / `PixelDataWriter` adapters (`dicom_jpeg::dicom_rs::PixelAdapter`, crate `dicom-jpeg-dicom`).
 * `inventory-registry`: also register the adapters in the dicom-rs transfer syntax registry (see below).
-* `parallel`: rayon parallelism.
 
 ## Using it with dicom-rs
 
