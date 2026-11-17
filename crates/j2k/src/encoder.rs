@@ -500,23 +500,30 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
                 1.0
             }
         };
-        let mse_for = |base: f64| -> f64 {
+        // Error sums per (component, band, step): steps are quantised, so
+        // most bands keep their step between bisection iterations.
+        let mut band_errors: std::collections::HashMap<(usize, usize, u64), (f64, usize)> =
+            std::collections::HashMap::new();
+        let mut mse_for = |base: f64| -> f64 {
             let steps = steps_for(base);
             let mut total = 0.0;
             for (c, comp) in decomposed.iter().enumerate() {
                 let wc = weight(c);
                 for (i, (_, p)) in comp.iter().enumerate() {
                     let d = steps[i].2;
-                    let mut err = 0.0;
-                    let mut n = 0usize;
-                    for &v in p.data.iter().step_by(3) {
-                        let a = v.abs() as f64;
-                        // a / d >= 0: truncation is floor (and no libm call).
-                        let q = (a / d) as i64 as f64;
-                        let rec = if q == 0.0 { 0.0 } else { (q + 0.5) * d };
-                        err += (a - rec) * (a - rec);
-                        n += 1;
-                    }
+                    let (err, n) = *band_errors.entry((c, i, d.to_bits())).or_insert_with(|| {
+                        let mut err = 0.0;
+                        let mut n = 0usize;
+                        for &v in p.data.iter().step_by(3) {
+                            let a = v.abs() as f64;
+                            // a / d >= 0: truncation is floor (and no libm call).
+                            let q = (a / d) as i64 as f64;
+                            let rec = if q == 0.0 { 0.0 } else { (q + 0.5) * d };
+                            err += (a - rec) * (a - rec);
+                            n += 1;
+                        }
+                        (err, n)
+                    });
                     if n > 0 {
                         total += wc * err * (p.data.len() as f64 / n as f64) * norms[i] * norms[i];
                     }
