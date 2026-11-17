@@ -32,41 +32,41 @@
 <text x="136.0" y="96.0" class="sub" text-anchor="start">reference implementations</text>
 <text x="16.0" y="125.0" class="group" text-anchor="start">Decode · REF lossless</text>
 <text x="190.0" y="151.0" class="name ours" text-anchor="end">dicom-jpeg</text>
-<path class="ours-fill" d="M200.0,139.0 h145.3 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-145.3 z"><title>dicom-jpeg: 46.9</title></path>
-<text x="357.3" y="151.0" class="value ours" text-anchor="start">46.9</text>
+<path class="ours-fill" d="M200.0,139.0 h304.6 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-304.6 z"><title>dicom-jpeg: 97.3</title></path>
+<text x="516.6" y="151.0" class="value ours" text-anchor="start">97.3</text>
 <text x="190.0" y="177.0" class="name" text-anchor="end">OpenJPEG</text>
-<path class="ref-fill" d="M200.0,165.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>OpenJPEG: 130.7</title></path>
-<text x="624.0" y="177.0" class="value" text-anchor="start">130.7</text>
+<path class="ref-fill" d="M200.0,165.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>OpenJPEG: 131.2</title></path>
+<text x="624.0" y="177.0" class="value" text-anchor="start">131.2</text>
 <text x="190.0" y="203.0" class="name" text-anchor="end">openjp2</text>
-<path class="ref-fill" d="M200.0,191.0 h165.6 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-165.6 z"><title>openjp2: 53.3</title></path>
-<text x="377.6" y="203.0" class="value" text-anchor="start">53.3</text>
+<path class="ref-fill" d="M200.0,191.0 h166.9 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-166.9 z"><title>openjp2: 53.9</title></path>
+<text x="378.9" y="203.0" class="value" text-anchor="start">53.9</text>
 <line class="axis" x1="200" y1="134" x2="200" y2="212"/>
 <text x="16.0" y="233.0" class="group" text-anchor="start">Decode · REF lossy</text>
 <text x="190.0" y="259.0" class="name ours" text-anchor="end">dicom-jpeg</text>
-<path class="ours-fill" d="M200.0,247.0 h121.6 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-121.6 z"><title>dicom-jpeg: 37.8</title></path>
-<text x="333.6" y="259.0" class="value ours" text-anchor="start">37.8</text>
+<path class="ours-fill" d="M200.0,247.0 h262.3 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-262.3 z"><title>dicom-jpeg: 79.8</title></path>
+<text x="474.3" y="259.0" class="value ours" text-anchor="start">79.8</text>
 <text x="190.0" y="285.0" class="name" text-anchor="end">OpenJPEG</text>
-<path class="ref-fill" d="M200.0,273.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>OpenJPEG: 125.1</title></path>
-<text x="624.0" y="285.0" class="value" text-anchor="start">125.1</text>
+<path class="ref-fill" d="M200.0,273.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>OpenJPEG: 124.7</title></path>
+<text x="624.0" y="285.0" class="value" text-anchor="start">124.7</text>
 <text x="190.0" y="311.0" class="name" text-anchor="end">openjp2</text>
-<path class="ref-fill" d="M200.0,299.0 h207.6 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-207.6 z"><title>openjp2: 63.6</title></path>
-<text x="419.6" y="311.0" class="value" text-anchor="start">63.6</text>
+<path class="ref-fill" d="M200.0,299.0 h210.8 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-210.8 z"><title>openjp2: 64.4</title></path>
+<text x="422.8" y="311.0" class="value" text-anchor="start">64.4</text>
 <line class="axis" x1="200" y1="242" x2="200" y2="320"/>
 <text x="16.0" y="341.0" class="group" text-anchor="start">Decode · pydicom RGB</text>
 <text x="190.0" y="367.0" class="name ours" text-anchor="end">dicom-jpeg</text>
-<path class="ours-fill" d="M200.0,355.0 h167.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-167.0 z"><title>dicom-jpeg: 24.9</title></path>
-<text x="379.0" y="367.0" class="value ours" text-anchor="start">24.9</text>
+<path class="ours-fill" d="M200.0,355.0 h281.5 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-281.5 z"><title>dicom-jpeg: 41.5</title></path>
+<text x="493.5" y="367.0" class="value ours" text-anchor="start">41.5</text>
 <text x="190.0" y="393.0" class="name" text-anchor="end">OpenJPEG</text>
-<path class="ref-fill" d="M200.0,381.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>OpenJPEG: 60.6</title></path>
-<text x="624.0" y="393.0" class="value" text-anchor="start">60.6</text>
+<path class="ref-fill" d="M200.0,381.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>OpenJPEG: 60.4</title></path>
+<text x="624.0" y="393.0" class="value" text-anchor="start">60.4</text>
 <text x="190.0" y="419.0" class="name" text-anchor="end">openjp2</text>
-<path class="ref-fill" d="M200.0,407.0 h220.3 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-220.3 z"><title>openjp2: 32.7</title></path>
-<text x="432.3" y="419.0" class="value" text-anchor="start">32.7</text>
+<path class="ref-fill" d="M200.0,407.0 h222.9 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-222.9 z"><title>openjp2: 33.0</title></path>
+<text x="434.9" y="419.0" class="value" text-anchor="start">33.0</text>
 <line class="axis" x1="200" y1="350" x2="200" y2="428"/>
 <text x="16.0" y="449.0" class="group" text-anchor="start">Encode · lossless</text>
 <text x="190.0" y="475.0" class="name ours" text-anchor="end">dicom-jpeg</text>
-<path class="ours-fill" d="M200.0,463.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>dicom-jpeg: 35.8 · ratio 3.32</title></path>
-<text x="624.0" y="475.0" class="value ours" text-anchor="start">35.8 · ratio 3.32</text>
+<path class="ours-fill" d="M200.0,463.0 h412.0 a4,4 0 0 1 4,4 v8.0 a4,4 0 0 1 -4,4 h-412.0 z"><title>dicom-jpeg: 34.9 · ratio 3.32</title></path>
+<text x="624.0" y="475.0" class="value ours" text-anchor="start">34.9 · ratio 3.32</text>
 <line class="axis" x1="200" y1="458" x2="200" y2="484"/>
 <text x="16.0" y="505.0" class="group" text-anchor="start">Encode · lossy</text>
 <text x="190.0" y="531.0" class="name ours" text-anchor="end">dicom-jpeg</text>
