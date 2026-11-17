@@ -3,8 +3,9 @@
 
 use super::CODEC;
 use super::decoder::ZIGZAG;
-use super::fdct::fdct_block;
+use super::fdct::{QuantTable, fdct_quantize};
 use super::huffman_encode::{BitWriter, EncodingTable, category, magnitude_bits};
+use dicom_jpeg_common::simd;
 use dicom_jpeg_common::{AppliedTransform, ColorSpace, Encoded, Image, Samples};
 use dicom_jpeg_common::{Error, Result};
 
@@ -218,32 +219,6 @@ fn downsample(full: Vec<u16>, pw: usize, fx: usize, fy: usize) -> Vec<u16> {
     out
 }
 
-/// A divisor with its reciprocal for exact division by multiplication
-/// (Lemire et al., "Faster remainder by direct computation"): for any
-/// 32-bit `n`, `n / d == (m * n) >> 64` with `m = 2^64 / d + 1`.
-#[derive(Clone, Copy)]
-struct Divisor {
-    half: u32,
-    m: u64,
-}
-
-impl Divisor {
-    fn new(d: u32) -> Self {
-        Divisor {
-            half: d >> 1,
-            m: u64::MAX / d as u64 + 1,
-        }
-    }
-
-    /// libjpeg quantisation: round half away from zero.
-    #[inline(always)]
-    fn quantize(self, c: i32) -> i32 {
-        let a = c.unsigned_abs() + self.half;
-        let v = ((self.m as u128 * a as u128) >> 64) as i32;
-        if c < 0 { -v } else { v }
-    }
-}
-
 fn write_segment(out: &mut Vec<u8>, marker: u8, payload: &[u8]) {
     out.extend_from_slice(&[0xFF, marker]);
     out.extend_from_slice(&((payload.len() + 2) as u16).to_be_bytes());
@@ -324,6 +299,7 @@ fn encode_dct(process: Process, image: &Image, opts: &EncoderOptions) -> Result<
     };
     let (mcus_x, mcus_y) = (w.div_ceil(8 * hmax), h.div_ceil(8 * vmax));
     let (pw, ph) = (mcus_x * 8 * hmax, mcus_y * 8 * vmax);
+    let level = simd::level();
     // Padded full-resolution planes in the coded colour space.
     let planes = full_planes(
         image,
@@ -352,18 +328,17 @@ fn encode_dct(process: Process, image: &Image, opts: &EncoderOptions) -> Result<
         let table = if chroma { 1 } else { 0 };
         // libjpeg quantization: divisor 8*q (the FDCT output is scaled by
         // 8), in zig-zag order.
-        let q = &qtables[table as usize];
-        let div: [Divisor; 64] = std::array::from_fn(|k| Divisor::new(q[ZIGZAG[k]] as u32 * 8));
+        let qt = QuantTable::new(&qtables[table as usize], coef_max);
         let mut blocks = Vec::with_capacity(bw * bh);
-        let mut coef = [0i32; 64];
+        let mut row = vec![[0i32; 64]; bw];
         for by in 0..bh {
-            for bx in 0..bw {
-                fdct_block(&data[by * 8 * cw + bx * 8..], cw, precision, &mut coef);
+            fdct_quantize(level, &data[by * 8 * cw..], cw, precision, &qt, &mut row);
+            for coef in &row {
                 let mut zz = [0i16; 64];
                 let mut nonzero = 0u64;
-                for k in 0..64 {
-                    let v = div[k].quantize(coef[ZIGZAG[k]]);
-                    zz[k] = v.clamp(-coef_max, coef_max) as i16;
+                for (k, z) in zz.iter_mut().enumerate() {
+                    let v = coef[ZIGZAG[k]];
+                    *z = v as i16;
                     nonzero |= ((v != 0) as u64) << k;
                 }
                 blocks.push(Block {

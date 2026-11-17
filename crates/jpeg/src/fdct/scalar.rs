@@ -1,24 +1,6 @@
-//! Accurate integer forward DCT ("ISLOW", IJG jfdctint.c).
-//!
-//! Output coefficients are scaled up by 8 relative to T.81 A.3.3, as in libjpeg;
-//! the quantizer divides by `8 * q`. As in libjpeg, 8-bit samples are
-//! transformed in 32-bit and 12-bit samples in 64-bit arithmetic, which
-//! cannot overflow for samples of the given precision.
+//! Scalar ISLOW forward DCT (libjpeg jfdctint.c) and quantisation.
 
-const CONST_BITS: u32 = 13;
-
-const FIX_0_298631336: i32 = 2446;
-const FIX_0_390180644: i32 = 3196;
-const FIX_0_541196100: i32 = 4433;
-const FIX_0_765366865: i32 = 6270;
-const FIX_0_899976223: i32 = 7373;
-const FIX_1_175875602: i32 = 9633;
-const FIX_1_501321110: i32 = 12299;
-const FIX_1_847759065: i32 = 15137;
-const FIX_1_961570560: i32 = 16069;
-const FIX_2_053119869: i32 = 16819;
-const FIX_2_562915447: i32 = 20995;
-const FIX_3_072711026: i32 = 25172;
+use super::*;
 
 /// Defines `$fdct`, the forward DCT in `$t` arithmetic.
 macro_rules! fdct_impl {
@@ -99,11 +81,27 @@ fdct_impl!(fdct_i64, i64);
 
 /// Forward DCT of the 8x8 block at `src` (row stride `stride`) of unsigned
 /// samples with `precision` bits; output in natural order, scaled by 8.
-pub(crate) fn fdct_block(src: &[u16], stride: usize, precision: u8, out: &mut [i32; 64]) {
+pub(super) fn fdct_block(src: &[u16], stride: usize, precision: u8, out: &mut [i32; 64]) {
     if precision > 8 {
         fdct_i64(src, stride, precision, out);
     } else {
         fdct_i32(src, stride, precision, out);
+    }
+}
+
+/// Forward DCT and quantisation of the blocks of one block row of 8-bit
+/// samples (block `i` at `src[8 * i..]`, row stride `stride`).
+pub(super) fn fdct_quantize8(src: &[u16], stride: usize, t: &QuantTable, out: &mut [[i32; 64]]) {
+    for (i, o) in out.iter_mut().enumerate() {
+        fdct_i32(&src[8 * i..], stride, 8, o);
+        quantize(t, o);
+    }
+}
+
+/// Quantise `c` (natural order) in place.
+pub(super) fn quantize(t: &QuantTable, c: &mut [i32; 64]) {
+    for (v, d) in c.iter_mut().zip(&t.div) {
+        *v = d.quantize(*v).clamp(-t.max, t.max);
     }
 }
 
@@ -140,7 +138,7 @@ mod tests {
                     if c < 0 { -v } else { v }
                 });
                 let mut back = [0u16; 64];
-                super::super::idct::idct_block(&deq, precision, &mut back, 8);
+                crate::idct::idct_block(&deq, precision, &mut back, 8);
                 for i in 0..64 {
                     assert!(
                         (back[i] as i32 - src[i] as i32).abs() <= 1,
