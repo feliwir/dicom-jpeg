@@ -5,7 +5,11 @@ use super::CODEC;
 use super::decoder::ZIGZAG;
 use super::fdct::{QuantTable, fdct_quantize};
 use super::huffman_encode::{BitWriter, EncodingTable, category, magnitude_bits};
-use dicom_jpeg_common::simd;
+use dicom_jpeg_common::interleave;
+use dicom_jpeg_common::simd::{self, Level};
+
+use super::downsample;
+use super::rgb_ycbcr::rgb_to_ycbcr;
 use dicom_jpeg_common::{AppliedTransform, ColorSpace, Encoded, Image, Samples};
 use dicom_jpeg_common::{Error, Result};
 
@@ -108,11 +112,12 @@ struct Component {
     blocks_w: usize,
 }
 
-/// Copy the samples of row `y` into the full-resolution planes (row stride
-/// `pw`), converting RGB to YCbCr with libjpeg's fixed-point arithmetic
-/// (jccolor.c) when `rgb`.
-fn fill_row<S: Copy + Into<u32>>(
-    src: &[S],
+/// Copy the samples of row `y` (all `u8` or all `u16`) into the
+/// full-resolution planes (row stride `pw`), converting RGB to YCbCr with
+/// libjpeg's fixed-point arithmetic (jccolor.c) when `rgb`.
+fn fill_row(
+    level: Level,
+    src: (Option<&[u8]>, Option<&[u16]>),
     planes: &mut [Vec<u16>],
     y: usize,
     pw: usize,
@@ -120,57 +125,67 @@ fn fill_row<S: Copy + Into<u32>>(
     precision: u8,
 ) {
     let nc = planes.len();
-    let w = src.len() / nc;
+    let w = src
+        .0
+        .map_or(0, <[u8]>::len)
+        .max(src.1.map_or(0, <[u16]>::len))
+        / nc;
     let off = y * pw;
-    if rgb {
-        const SCALEBITS: u32 = 16;
-        let fix = |x: f64| (x * 65536.0 + 0.5) as i32;
-        let half = 1i32 << (SCALEBITS - 1);
-        let offset = (1i32 << (precision - 1)) << SCALEBITS;
-        let (yr, yg, yb) = (fix(0.29900), fix(0.58700), fix(0.11400));
-        let (cbr, cbg, cbb) = (fix(0.16874), fix(0.33126), fix(0.5));
-        let (crr, crg, crb) = (fix(0.5), fix(0.41869), fix(0.08131));
-        let [p0, p1, p2] = planes else {
-            unreachable!("three components")
-        };
-        let rows = p0[off..off + w]
-            .iter_mut()
-            .zip(&mut p1[off..off + w])
-            .zip(&mut p2[off..off + w]);
-        for (((y, cb), cr), px) in rows.zip(src.as_chunks::<3>().0) {
-            let (r, g, b) = (
-                px[0].into() as i32,
-                px[1].into() as i32,
-                px[2].into() as i32,
-            );
-            *y = ((yr * r + yg * g + yb * b + half) >> SCALEBITS) as u16;
-            *cb = ((-cbr * r - cbg * g + cbb * b + offset + half - 1) >> SCALEBITS) as u16;
-            *cr = ((crr * r - crg * g - crb * b + offset + half - 1) >> SCALEBITS) as u16;
+    if let [p0, p1, p2] = planes {
+        let rows = [
+            &mut p0[off..off + w],
+            &mut p1[off..off + w],
+            &mut p2[off..off + w],
+        ];
+        let [a, b, c] = rows;
+        match src {
+            (Some(s), _) => interleave::deinterleave3_u8(level, s, a, b, c),
+            (_, Some(s)) => interleave::deinterleave3_u16(level, s, a, b, c),
+            _ => {}
         }
-    } else {
-        for (c, plane) in planes.iter_mut().enumerate() {
-            for (d, &s) in plane[off..off + w]
-                .iter_mut()
-                .zip(src.iter().skip(c).step_by(nc))
-            {
-                *d = s.into() as u16;
+        if rgb {
+            rgb_to_ycbcr(level, precision, [a, b, c]);
+        }
+        return;
+    }
+    for (c, plane) in planes.iter_mut().enumerate() {
+        let dst = &mut plane[off..off + w];
+        match src {
+            (Some(s), _) => {
+                for (d, &v) in dst.iter_mut().zip(s.iter().skip(c).step_by(nc)) {
+                    *d = v as u16;
+                }
             }
+            (_, Some(s)) => {
+                for (d, &v) in dst.iter_mut().zip(s.iter().skip(c).step_by(nc)) {
+                    *d = v;
+                }
+            }
+            _ => {}
         }
     }
 }
 
 /// The image as full-resolution planes in the coded colour space, padded to
 /// `pw` x `ph` by edge replication.
-fn full_planes(image: &Image, precision: u8, rgb: bool, pw: usize, ph: usize) -> Vec<Vec<u16>> {
+fn full_planes(
+    level: Level,
+    image: &Image,
+    precision: u8,
+    rgb: bool,
+    pw: usize,
+    ph: usize,
+) -> Vec<Vec<u16>> {
     let (w, h) = (image.info.width as usize, image.info.height as usize);
     let nc = image.info.components as usize;
     let mut planes = vec![vec![0u16; pw * ph]; nc];
     for y in 0..h {
         let r = y * w * nc..(y + 1) * w * nc;
-        match &image.samples {
-            Samples::U8(s) => fill_row(&s[r], &mut planes, y, pw, rgb, precision),
-            Samples::U16(s) => fill_row(&s[r], &mut planes, y, pw, rgb, precision),
-        }
+        let src = match &image.samples {
+            Samples::U8(s) => (Some(&s[r]), None),
+            Samples::U16(s) => (None, Some(&s[r])),
+        };
+        fill_row(level, src, &mut planes, y, pw, rgb, precision);
     }
     for plane in &mut planes {
         for y in 0..h {
@@ -188,30 +203,28 @@ fn full_planes(image: &Image, precision: u8, rgb: bool, pw: usize, ph: usize) ->
 }
 
 /// Downsample a padded `pw`-wide plane by (`fx`, `fy`) with IJG's
-/// alternating-bias averaging (jcsample.c: bias 0,1 for 2 samples, 1,2 for 4).
-fn downsample(full: Vec<u16>, pw: usize, fx: usize, fy: usize) -> Vec<u16> {
-    let mut out = Vec::with_capacity(full.len() / (fx * fy));
+/// alternating-bias averaging (jcsample.c).
+fn downsample(
+    level: Level,
+    precision: u8,
+    full: Vec<u16>,
+    pw: usize,
+    fx: usize,
+    fy: usize,
+) -> Vec<u16> {
+    let mut out = vec![0u16; full.len() / (fx * fy)];
+    let ow = pw / 2;
     match (fx, fy) {
         (1, 1) => return full,
         (2, 1) => {
-            for row in full.chunks_exact(pw) {
-                out.extend(row.as_chunks::<4>().0.iter().flat_map(|p| {
-                    [
-                        ((p[0] as u32 + p[1] as u32) >> 1) as u16,
-                        ((p[2] as u32 + p[3] as u32 + 1) >> 1) as u16,
-                    ]
-                }));
+            for (row, o) in full.chunks_exact(pw).zip(out.chunks_exact_mut(ow)) {
+                downsample::h2v1(level, precision, row, o);
             }
         }
         (2, 2) => {
-            for rows in full.chunks_exact(2 * pw) {
+            for (rows, o) in full.chunks_exact(2 * pw).zip(out.chunks_exact_mut(ow)) {
                 let (a, b) = rows.split_at(pw);
-                let pairs = a.as_chunks::<4>().0.iter().zip(b.as_chunks::<4>().0);
-                out.extend(pairs.flat_map(|(a, b)| {
-                    let s0 = a[0] as u32 + a[1] as u32 + b[0] as u32 + b[1] as u32;
-                    let s1 = a[2] as u32 + a[3] as u32 + b[2] as u32 + b[3] as u32;
-                    [((s0 + 1) >> 2) as u16, ((s1 + 2) >> 2) as u16]
-                }));
+                downsample::h2v2(level, precision, a, b, o);
             }
         }
         _ => unreachable!("only 4:2:2 and 4:2:0 subsampling"),
@@ -302,6 +315,7 @@ fn encode_dct(process: Process, image: &Image, opts: &EncoderOptions) -> Result<
     let level = simd::level();
     // Padded full-resolution planes in the coded colour space.
     let planes = full_planes(
+        level,
         image,
         precision,
         nc == 3 && color == ColorSpace::Rgb,
@@ -322,7 +336,7 @@ fn encode_dct(process: Process, image: &Image, opts: &EncoderOptions) -> Result<
         let chroma = is_color && ci > 0;
         let (ch, cv) = if chroma { (1, 1) } else { (hmax, vmax) };
         let (fx, fy) = (hmax / ch, vmax / cv);
-        let data = downsample(plane, pw, fx, fy);
+        let data = downsample(level, precision, plane, pw, fx, fy);
         let (cw, chh) = (pw / fx, ph / fy);
         let (bw, bh) = (cw / 8, chh / 8);
         let table = if chroma { 1 } else { 0 };

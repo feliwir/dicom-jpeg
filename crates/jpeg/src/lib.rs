@@ -11,6 +11,8 @@ mod bitreader;
 mod color;
 mod decoder;
 #[cfg(feature = "encode")]
+mod downsample;
+#[cfg(feature = "encode")]
 mod encoder;
 #[cfg(feature = "encode")]
 mod fdct;
@@ -18,6 +20,8 @@ mod huffman;
 #[cfg(feature = "encode")]
 mod huffman_encode;
 mod idct;
+#[cfg(feature = "encode")]
+mod rgb_ycbcr;
 mod upsample;
 mod ycbcr;
 
