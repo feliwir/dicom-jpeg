@@ -177,6 +177,49 @@ impl Params {
     }
 }
 
+/// The quantized value of every local gradient `-MAXVAL..=MAXVAL` (the
+/// range of differences of reconstructed samples), from
+/// [`Params::quantize_gradient`].
+#[derive(Debug, Clone)]
+pub(crate) struct Quantizer {
+    lut: Vec<i8>,
+    offset: i32,
+}
+
+impl Quantizer {
+    pub(crate) fn new(p: &Params) -> Self {
+        Quantizer {
+            lut: (-p.maxval..=p.maxval)
+                .map(|d| p.quantize_gradient(d) as i8)
+                .collect(),
+            offset: p.maxval,
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn q(&self, d: i32) -> i32 {
+        self.lut[(d + self.offset) as usize] as i32
+    }
+}
+
+/// The smallest `k` with `n << k >= a` (A.5.1), at most 24. Starts the
+/// search at the bit-length bound, below which every `k` fails.
+#[inline(always)]
+fn golomb_k(n: i32, a: i32) -> Result<u32> {
+    let bits = |v: i32| 32 - (v.max(0) as u32).leading_zeros();
+    let mut k = bits(a).saturating_sub(bits(n) + 1);
+    if k > 24 {
+        return Err(Error::invalid(CODEC, "Golomb parameter out of range"));
+    }
+    while (n << k) < a {
+        k += 1;
+        if k > 24 {
+            return Err(Error::invalid(CODEC, "Golomb parameter out of range"));
+        }
+    }
+    Ok(k)
+}
+
 /// Context index (0..=364) and sign from the three quantized gradients (A.3.4).
 #[inline]
 pub(crate) fn context(q1: i32, q2: i32, q3: i32) -> (usize, i32) {
@@ -212,14 +255,7 @@ pub(crate) struct RegularContext {
 impl RegularContext {
     #[inline]
     pub(crate) fn golomb_k(&self) -> Result<u32> {
-        let mut k = 0;
-        while (self.n << k) < self.a {
-            k += 1;
-            if k > 24 {
-                return Err(Error::invalid(CODEC, "Golomb parameter out of range"));
-            }
-        }
-        Ok(k)
+        golomb_k(self.n, self.a)
     }
 
     /// The special error mapping of A.5.2 applies (k = 0, NEAR = 0, 2B <= -N).
@@ -271,15 +307,7 @@ pub(crate) struct RunContext {
 impl RunContext {
     #[inline]
     pub(crate) fn golomb_k(&self) -> Result<u32> {
-        let temp = self.a + (self.n >> 1) * self.ritype;
-        let mut k = 0;
-        while (self.n << k) < temp {
-            k += 1;
-            if k > 24 {
-                return Err(Error::invalid(CODEC, "Golomb parameter out of range"));
-            }
-        }
-        Ok(k)
+        golomb_k(self.n, self.a + (self.n >> 1) * self.ritype)
     }
 
     #[cfg(feature = "encode")]
@@ -353,6 +381,44 @@ impl State {
                 },
             ],
             run_index: 0,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn golomb_k_matches_the_loop() {
+        let reference = |n: i32, a: i32| -> Option<u32> {
+            let mut k = 0;
+            while (n << k) < a {
+                k += 1;
+                if k > 24 {
+                    return None;
+                }
+            }
+            Some(k)
+        };
+        for n in 1..300 {
+            for a in (-5..70_000)
+                .step_by(7)
+                .chain([1 << 20, (1 << 24) * 3, 1 << 30])
+            {
+                assert_eq!(golomb_k(n, a).ok(), reference(n, a), "n {n} a {a}");
+            }
+        }
+    }
+
+    #[test]
+    fn quantizer_matches_the_thresholds() {
+        for (precision, near) in [(8u8, 0), (8, 3), (12, 0), (16, 2), (2, 0)] {
+            let p = Params::new(precision, near, Preset::default()).unwrap();
+            let q = Quantizer::new(&p);
+            for d in -p.maxval..=p.maxval {
+                assert_eq!(q.q(d), p.quantize_gradient(d));
+            }
         }
     }
 }

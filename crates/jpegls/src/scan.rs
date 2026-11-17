@@ -9,7 +9,7 @@ use super::CODEC;
 use super::bitio::BitReader;
 #[cfg(feature = "encode")]
 use super::bitio::BitWriter;
-use super::coding::{J, Params, State, context, predict};
+use super::coding::{J, Params, Quantizer, State, context, predict};
 use dicom_jpeg_common::{Error, Result};
 
 /// Interleave mode of a scan.
@@ -116,6 +116,7 @@ where
 struct Decoder<'r, 'a> {
     r: &'r mut BitReader<'a>,
     p: Params,
+    q: &'r Quantizer,
 }
 
 impl Decoder<'_, '_> {
@@ -170,32 +171,31 @@ impl Decoder<'_, '_> {
         Ok(index)
     }
 
-    fn line(&mut self, s: &mut State, l: &mut Lines, width: usize) -> Result<()> {
-        let n = l.n;
+    /// Decode one line of `N`-sample pixels.
+    fn line<const N: usize>(&mut self, s: &mut State, l: &mut Lines, width: usize) -> Result<()> {
         let near = self.p.near;
+        let (prev, cur) = (&l.prev[..(width + 2) * N], &mut l.cur[..(width + 2) * N]);
         let mut x = 1usize;
         while x <= width {
-            let mut q = [(0, 0, 0); 4];
-            let mut all_zero = true;
-            for (c, qslot) in q.iter_mut().enumerate().take(n) {
-                let ra = l.cur[(x - 1) * n + c];
-                let rc = l.prev[(x - 1) * n + c];
-                let rb = l.prev[x * n + c];
-                let rd = l.prev[(x + 1) * n + c];
-                let qc = (
-                    self.p.quantize_gradient(rd - rb),
-                    self.p.quantize_gradient(rb - rc),
-                    self.p.quantize_gradient(rc - ra),
-                );
-                all_zero &= qc == (0, 0, 0);
-                *qslot = qc;
-            }
-            if !all_zero {
-                for (c, &qc) in q.iter().enumerate().take(n) {
-                    let ra = l.cur[(x - 1) * n + c];
-                    let rc = l.prev[(x - 1) * n + c];
-                    let rb = l.prev[x * n + c];
-                    l.cur[x * n + c] = self.regular(s, qc, predict(ra, rb, rc))?;
+            // Neighbours a (left), b (above), c (above left), d (above right).
+            let nb = |cur: &[i32], c: usize| {
+                (
+                    cur[(x - 1) * N + c],
+                    prev[x * N + c],
+                    prev[(x - 1) * N + c],
+                    prev[(x + 1) * N + c],
+                )
+            };
+            // Run mode iff every gradient quantizes to 0, i.e. lies within NEAR.
+            let flat = (0..N).all(|c| {
+                let (ra, rb, rc, rd) = nb(cur, c);
+                (rd - rb).abs() <= near && (rb - rc).abs() <= near && (rc - ra).abs() <= near
+            });
+            if !flat {
+                for c in 0..N {
+                    let (ra, rb, rc, rd) = nb(cur, c);
+                    let q = (self.q.q(rd - rb), self.q.q(rb - rc), self.q.q(rc - ra));
+                    cur[x * N + c] = self.regular(s, q, predict(ra, rb, rc))?;
                 }
                 x += 1;
                 continue;
@@ -203,18 +203,18 @@ impl Decoder<'_, '_> {
             // Run mode.
             let count = self.run_pixels(s, width - (x - 1))?;
             for i in x..x + count {
-                for c in 0..n {
-                    l.cur[i * n + c] = l.cur[(x - 1) * n + c];
+                for c in 0..N {
+                    cur[i * N + c] = cur[(x - 1) * N + c];
                 }
             }
             let end = x + count;
             if end > width {
                 break;
             }
-            for c in 0..n {
-                let ra = l.cur[(x - 1) * n + c];
-                let rb = l.prev[end * n + c];
-                l.cur[end * n + c] = if n == 1 && (ra - rb).abs() <= near {
+            for c in 0..N {
+                let ra = cur[(x - 1) * N + c];
+                let rb = prev[end * N + c];
+                cur[end * N + c] = if N == 1 && (ra - rb).abs() <= near {
                     let e = self.ri_error(s, 1)?;
                     self.p.reconstruct(ra, e)
                 } else {
@@ -242,6 +242,7 @@ pub(crate) fn decode_scan(
         _ => (ns, 1),
     };
     let width = layout.width;
+    let quantizer = Quantizer::new(p);
     let r_cell = std::cell::RefCell::new(r);
     for_each_line(
         layout,
@@ -251,12 +252,21 @@ pub(crate) fn decode_scan(
         || r_cell.borrow_mut().restart(),
         |state, lines, g, y| {
             let mut rb = r_cell.borrow_mut();
-            let mut d = Decoder { r: &mut rb, p: *p };
-            d.line(state, lines, width)?;
+            let mut d = Decoder {
+                r: &mut rb,
+                p: *p,
+                q: &quantizer,
+            };
+            match n {
+                1 => d.line::<1>(state, lines, width)?,
+                2 => d.line::<2>(state, lines, width)?,
+                3 => d.line::<3>(state, lines, width)?,
+                _ => d.line::<4>(state, lines, width)?,
+            }
             for c in 0..n {
-                let plane = &mut planes[g + c];
-                for x in 0..width {
-                    plane[y * width + x] = lines.cur[(x + 1) * n + c] as u16;
+                let row = &mut planes[g + c][y * width..(y + 1) * width];
+                for (d, px) in row.iter_mut().zip(lines.cur[n..].chunks_exact(n)) {
+                    *d = px[c] as u16;
                 }
             }
             Ok(())
@@ -271,6 +281,7 @@ pub(crate) fn decode_scan(
 struct Encoder<'w> {
     w: &'w mut BitWriter,
     p: Params,
+    q: &'w Quantizer,
 }
 
 #[cfg(feature = "encode")]
@@ -321,40 +332,40 @@ impl Encoder<'_> {
         }
     }
 
-    /// Encode one line; `src(x, c)` gives the original sample. The current
-    /// line buffer receives the reconstructed samples.
-    fn line(
+    /// Encode one line of `N`-sample pixels; `src[c]` is the line of
+    /// component `c`. The current line buffer receives the reconstructed
+    /// samples.
+    fn line<const N: usize>(
         &mut self,
         s: &mut State,
         l: &mut Lines,
         width: usize,
-        src: &dyn Fn(usize, usize) -> i32,
+        src: [&[u16]; N],
     ) {
-        let n = l.n;
         let near = self.p.near;
+        let (prev, cur) = (&l.prev[..(width + 2) * N], &mut l.cur[..(width + 2) * N]);
+        let src = src.map(|r| &r[..width]);
         let mut x = 1usize;
         while x <= width {
-            let mut q = [(0, 0, 0); 4];
-            let mut all_zero = true;
-            for (c, qslot) in q.iter_mut().enumerate().take(n) {
-                let ra = l.cur[(x - 1) * n + c];
-                let rc = l.prev[(x - 1) * n + c];
-                let rb = l.prev[x * n + c];
-                let rd = l.prev[(x + 1) * n + c];
-                let qc = (
-                    self.p.quantize_gradient(rd - rb),
-                    self.p.quantize_gradient(rb - rc),
-                    self.p.quantize_gradient(rc - ra),
-                );
-                all_zero &= qc == (0, 0, 0);
-                *qslot = qc;
-            }
-            if !all_zero {
-                for (c, &qc) in q.iter().enumerate().take(n) {
-                    let ra = l.cur[(x - 1) * n + c];
-                    let rc = l.prev[(x - 1) * n + c];
-                    let rb = l.prev[x * n + c];
-                    l.cur[x * n + c] = self.regular(s, qc, predict(ra, rb, rc), src(x - 1, c));
+            let nb = |cur: &[i32], c: usize| {
+                (
+                    cur[(x - 1) * N + c],
+                    prev[x * N + c],
+                    prev[(x - 1) * N + c],
+                    prev[(x + 1) * N + c],
+                )
+            };
+            // Run mode iff every gradient quantizes to 0, i.e. lies within NEAR.
+            let flat = (0..N).all(|c| {
+                let (ra, rb, rc, rd) = nb(cur, c);
+                (rd - rb).abs() <= near && (rb - rc).abs() <= near && (rc - ra).abs() <= near
+            });
+            if !flat {
+                for c in 0..N {
+                    let (ra, rb, rc, rd) = nb(cur, c);
+                    let q = (self.q.q(rd - rb), self.q.q(rb - rc), self.q.q(rc - ra));
+                    let v = src[c][x - 1] as i32;
+                    cur[x * N + c] = self.regular(s, q, predict(ra, rb, rc), v);
                 }
                 x += 1;
                 continue;
@@ -362,10 +373,11 @@ impl Encoder<'_> {
             // Run mode: extend while every sample is within NEAR of Ra.
             let mut count = 0;
             while x + count <= width
-                && (0..n).all(|c| (src(x + count - 1, c) - l.cur[(x - 1) * n + c]).abs() <= near)
+                && (0..N)
+                    .all(|c| (src[c][x + count - 1] as i32 - cur[(x - 1) * N + c]).abs() <= near)
             {
-                for c in 0..n {
-                    l.cur[(x + count) * n + c] = l.cur[(x - 1) * n + c];
+                for c in 0..N {
+                    cur[(x + count) * N + c] = cur[(x - 1) * N + c];
                 }
                 count += 1;
             }
@@ -374,11 +386,11 @@ impl Encoder<'_> {
             if end > width {
                 break;
             }
-            for c in 0..n {
-                let ra = l.cur[(x - 1) * n + c];
-                let rb = l.prev[end * n + c];
-                let v = src(end - 1, c);
-                l.cur[end * n + c] = if n == 1 && (ra - rb).abs() <= near {
+            for c in 0..N {
+                let ra = cur[(x - 1) * N + c];
+                let rb = prev[end * N + c];
+                let v = src[c][end - 1] as i32;
+                cur[end * N + c] = if N == 1 && (ra - rb).abs() <= near {
                     let e = self.p.modulo_range(self.p.quantize_error(v - ra));
                     self.ri_error(s, 1, e);
                     self.p.reconstruct(ra, e)
@@ -404,6 +416,7 @@ pub(crate) fn encode_scan(w: &mut BitWriter, p: &Params, layout: &ScanLayout, pl
         _ => (ns, 1),
     };
     let width = layout.width;
+    let quantizer = Quantizer::new(p);
     let w_cell = std::cell::RefCell::new(w);
     let mut rst = 0u8;
     for_each_line(
@@ -419,9 +432,18 @@ pub(crate) fn encode_scan(w: &mut BitWriter, p: &Params, layout: &ScanLayout, pl
         },
         |state, lines, g, y| {
             let mut wb = w_cell.borrow_mut();
-            let mut e = Encoder { w: &mut wb, p: *p };
-            let src = |x: usize, c: usize| planes[g + c][y * width + x] as i32;
-            e.line(state, lines, width, &src);
+            let mut e = Encoder {
+                w: &mut wb,
+                p: *p,
+                q: &quantizer,
+            };
+            let row = |c: usize| &planes[g + c][y * width..(y + 1) * width];
+            match n {
+                1 => e.line::<1>(state, lines, width, [row(0)]),
+                2 => e.line::<2>(state, lines, width, [row(0), row(1)]),
+                3 => e.line::<3>(state, lines, width, [row(0), row(1), row(2)]),
+                _ => e.line::<4>(state, lines, width, [row(0), row(1), row(2), row(3)]),
+            }
             Ok(())
         },
     )
