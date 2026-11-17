@@ -3,7 +3,7 @@
 
 use super::CODEC;
 use super::bitreader::BitReader;
-use super::color::{Plane, upsample, ycbcr_to_rgb};
+use super::color::{Plane, Sample, Upsampler, ycbcr_to_rgb};
 use super::huffman::HuffmanTable;
 use super::idct::idct_block;
 use dicom_jpeg_common::{
@@ -531,6 +531,15 @@ impl<'a> Decoder<'a> {
             coef[0] = pred[si].wrapping_mul(q[0] as i32);
             let mut k = 1;
             while k < 64 {
+                if let Some((r, v)) = ac.decode_fast_ac(reader) {
+                    k += r;
+                    if k > 63 {
+                        return Err(Error::invalid(CODEC, "AC coefficient index out of range"));
+                    }
+                    coef[ZIGZAG[k]] = v.wrapping_mul(q[k] as i32);
+                    k += 1;
+                    continue;
+                }
                 let rs = ac.decode(reader)?;
                 let (r, s) = ((rs >> 4) as usize, (rs & 15) as u32);
                 if s == 0 {
@@ -765,42 +774,68 @@ impl<'a> Decoder<'a> {
     /// Assemble the decoded planes into an interleaved image.
     pub(crate) fn into_image(self, opts: &DecodeOptions) -> Result<Image> {
         let color = self.native_color(opts.color_hint);
-        let frame = self.frame.expect("frame");
-        let (w, h) = (frame.width, frame.height);
+        let frame = self.frame.as_ref().expect("frame");
         let nc = frame.components.len();
-        let full: Vec<Vec<u16>> = frame
-            .components
-            .iter()
-            .zip(&self.planes)
-            .map(|(c, p)| upsample(p, c.h, c.v, frame.hmax, frame.vmax, w, h))
-            .collect();
-        let mut out = vec![0u16; w * h * nc];
         let convert =
             nc == 3 && color == ColorSpace::YCbCr && opts.color_output == ColorOutput::Rgb;
-        let color_space = if convert {
-            ycbcr_to_rgb(&full[0], &full[1], &full[2], frame.precision, &mut out);
-            ColorSpace::Rgb
-        } else {
-            for (ci, plane) in full.iter().enumerate() {
-                for (i, &v) in plane.iter().enumerate() {
-                    out[i * nc + ci] = v;
-                }
-            }
-            color
-        };
         let info = ImageInfo {
-            width: w as u32,
-            height: h as u32,
+            width: frame.width as u32,
+            height: frame.height as u32,
             components: nc as u16,
             bits_per_sample: frame.precision,
             signed: false,
-            color_space,
+            color_space: if convert { ColorSpace::Rgb } else { color },
         };
         let samples = if frame.precision <= 8 {
-            Samples::U8(out.into_iter().map(|v| v as u8).collect())
+            Samples::U8(self.assemble(convert))
         } else {
-            Samples::U16(out)
+            Samples::U16(self.assemble(convert))
         };
         Image::new(info, samples)
+    }
+
+    /// One pass over the planes: per output row, upsample each component,
+    /// then convert to RGB or interleave straight into the output.
+    fn assemble<S: Sample>(&self, convert: bool) -> Vec<S> {
+        let frame = self.frame.as_ref().expect("frame");
+        let (w, h) = (frame.width, frame.height);
+        let nc = frame.components.len();
+        let mut ups: Vec<Upsampler> = frame
+            .components
+            .iter()
+            .zip(&self.planes)
+            .map(|(c, p)| Upsampler::new(p, (c.h, c.v), (frame.hmax, frame.vmax), w))
+            .collect();
+        let mut out = vec![S::default(); w * h * nc];
+        for (y, dst) in out.chunks_exact_mut(w * nc).enumerate() {
+            if nc == 1 {
+                let src = ups[0].row(&self.planes[0], y);
+                for (d, &s) in dst.iter_mut().zip(src) {
+                    *d = S::from_u16(s);
+                }
+                continue;
+            }
+            if convert {
+                let [u0, u1, u2] = &mut ups[..] else {
+                    unreachable!("three components")
+                };
+                let (p0, p1, p2) = (&self.planes[0], &self.planes[1], &self.planes[2]);
+                ycbcr_to_rgb(
+                    &u0.row(p0, y)[..w],
+                    &u1.row(p1, y)[..w],
+                    &u2.row(p2, y)[..w],
+                    frame.precision,
+                    dst,
+                );
+                continue;
+            }
+            for (ci, (up, plane)) in ups.iter_mut().zip(&self.planes).enumerate() {
+                let src = up.row(plane, y);
+                for (d, &s) in dst.iter_mut().skip(ci).step_by(nc).zip(src) {
+                    *d = S::from_u16(s);
+                }
+            }
+        }
+        out
     }
 }

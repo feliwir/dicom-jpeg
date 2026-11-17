@@ -33,6 +33,29 @@ impl<'a> BitReader<'a> {
 
     #[inline]
     fn fill(&mut self) {
+        // Fast path: as many whole bytes as fit, taken from one 8-byte load,
+        // when none of them is 0xFF (no stuffing, no marker).
+        if !self.at_marker
+            && let Some(chunk) = self.data.get(self.pos..self.pos + 8)
+        {
+            let w = u64::from_be_bytes(chunk.try_into().expect("8 bytes"));
+            let n = (64 - self.nbits) / 8;
+            // Flags bytes of `w` that are 0xFF (and possibly bytes before
+            // one, which only sends us to the slow path).
+            let v = !w;
+            let ff = v.wrapping_sub(0x0101_0101_0101_0101) & !v & 0x8080_8080_8080_8080;
+            let mask = if n >= 8 {
+                u64::MAX
+            } else {
+                !(u64::MAX >> (8 * n))
+            };
+            if n > 0 && ff & mask == 0 {
+                self.bits |= (w & mask) >> self.nbits;
+                self.nbits += 8 * n;
+                self.pos += n as usize;
+                return;
+            }
+        }
         while self.nbits <= 56 {
             let byte = if self.at_marker {
                 self.padding_bits += 8;

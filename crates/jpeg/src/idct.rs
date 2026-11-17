@@ -2,117 +2,139 @@
 //!
 //! This is the "ISLOW" algorithm of the IJG library (jidctint.c, Loeffler,
 //! Ligtenberg & Moschytz), reproduced bit-exactly so decoded output matches
-//! libjpeg 6b / DCMTK / libjpeg-turbo. Intermediate values use `i64`, so
-//! corrupt coefficients cannot overflow.
+//! libjpeg 6b / DCMTK / libjpeg-turbo. As in libjpeg, 8-bit data is
+//! transformed in 32-bit and 12-bit data in 64-bit arithmetic; valid data
+//! never overflows, and corrupt coefficients wrap instead of panicking.
 
 const CONST_BITS: u32 = 13;
 
-const FIX_0_298631336: i64 = 2446;
-const FIX_0_390180644: i64 = 3196;
-const FIX_0_541196100: i64 = 4433;
-const FIX_0_765366865: i64 = 6270;
-const FIX_0_899976223: i64 = 7373;
-const FIX_1_175875602: i64 = 9633;
-const FIX_1_501321110: i64 = 12299;
-const FIX_1_847759065: i64 = 15137;
-const FIX_1_961570560: i64 = 16069;
-const FIX_2_053119869: i64 = 16819;
-const FIX_2_562915447: i64 = 20995;
-const FIX_3_072711026: i64 = 25172;
+const FIX_0_298631336: i32 = 2446;
+const FIX_0_390180644: i32 = 3196;
+const FIX_0_541196100: i32 = 4433;
+const FIX_0_765366865: i32 = 6270;
+const FIX_0_899976223: i32 = 7373;
+const FIX_1_175875602: i32 = 9633;
+const FIX_1_501321110: i32 = 12299;
+const FIX_1_847759065: i32 = 15137;
+const FIX_1_961570560: i32 = 16069;
+const FIX_2_053119869: i32 = 16819;
+const FIX_2_562915447: i32 = 20995;
+const FIX_3_072711026: i32 = 25172;
 
-#[inline(always)]
-fn descale(x: i64, n: u32) -> i64 {
-    (x + (1 << (n - 1))) >> n
+/// Defines `$idct`, the IDCT in `$t` arithmetic: columns, then rows, each
+/// with libjpeg's shortcut for all-zero AC terms. libjpeg uses PASS1_BITS = 2
+/// for 8-bit and 1 for 12-bit samples.
+macro_rules! idct_impl {
+    ($idct:ident, $t:ty) => {
+        fn $idct(
+            coef: &[i32; 64],
+            pass1_bits: u32,
+            center: i32,
+            max: i32,
+            out: &mut [u16],
+            stride: usize,
+        ) {
+            #[inline(always)]
+            fn descale(x: $t, n: u32) -> $t {
+                x.wrapping_add(1 << (n - 1)) >> n
+            }
+
+            /// One 8-point 1-D IDCT. Returns the eight outputs before the
+            /// final descaling: (tmp10 ± tmp3, tmp11 ± tmp2, tmp12 ± tmp1,
+            /// tmp13 ± tmp0).
+            #[inline(always)]
+            fn idct_1d(i: [$t; 8]) -> [$t; 8] {
+                let mul = |a: $t, k: i32| a.wrapping_mul(k as $t);
+                // Even part
+                let z2 = i[2];
+                let z3 = i[6];
+                let z1 = mul(z2.wrapping_add(z3), FIX_0_541196100);
+                let tmp2 = z1.wrapping_add(mul(z3, -FIX_1_847759065));
+                let tmp3 = z1.wrapping_add(mul(z2, FIX_0_765366865));
+                let tmp0 = i[0].wrapping_add(i[4]).wrapping_shl(CONST_BITS);
+                let tmp1 = i[0].wrapping_sub(i[4]).wrapping_shl(CONST_BITS);
+                let tmp10 = tmp0.wrapping_add(tmp3);
+                let tmp13 = tmp0.wrapping_sub(tmp3);
+                let tmp11 = tmp1.wrapping_add(tmp2);
+                let tmp12 = tmp1.wrapping_sub(tmp2);
+
+                // Odd part
+                let (t0, t1, t2, t3) = (i[7], i[5], i[3], i[1]);
+                let z1 = t0.wrapping_add(t3);
+                let z2 = t1.wrapping_add(t2);
+                let z3 = t0.wrapping_add(t2);
+                let z4 = t1.wrapping_add(t3);
+                let z5 = mul(z3.wrapping_add(z4), FIX_1_175875602);
+                let t0 = mul(t0, FIX_0_298631336);
+                let t1 = mul(t1, FIX_2_053119869);
+                let t2 = mul(t2, FIX_3_072711026);
+                let t3 = mul(t3, FIX_1_501321110);
+                let z1 = mul(z1, -FIX_0_899976223);
+                let z2 = mul(z2, -FIX_2_562915447);
+                let z3 = mul(z3, -FIX_1_961570560).wrapping_add(z5);
+                let z4 = mul(z4, -FIX_0_390180644).wrapping_add(z5);
+                let t0 = t0.wrapping_add(z1).wrapping_add(z3);
+                let t1 = t1.wrapping_add(z2).wrapping_add(z4);
+                let t2 = t2.wrapping_add(z2).wrapping_add(z3);
+                let t3 = t3.wrapping_add(z1).wrapping_add(z4);
+
+                [
+                    tmp10.wrapping_add(t3),
+                    tmp11.wrapping_add(t2),
+                    tmp12.wrapping_add(t1),
+                    tmp13.wrapping_add(t0),
+                    tmp13.wrapping_sub(t0),
+                    tmp12.wrapping_sub(t1),
+                    tmp11.wrapping_sub(t2),
+                    tmp10.wrapping_sub(t3),
+                ]
+            }
+
+            let mut ws: [$t; 64] = [0; 64];
+            for c in 0..8 {
+                let col: [$t; 8] = std::array::from_fn(|r| coef[r * 8 + c] as $t);
+                if col[1..].iter().all(|&v| v == 0) {
+                    let dc = col[0].wrapping_shl(pass1_bits);
+                    for r in 0..8 {
+                        ws[r * 8 + c] = dc;
+                    }
+                    continue;
+                }
+                let o = idct_1d(col);
+                for r in 0..8 {
+                    ws[r * 8 + c] = descale(o[r], CONST_BITS - pass1_bits);
+                }
+            }
+            let shift = CONST_BITS + pass1_bits + 3;
+            let level = |v: $t| (v as i32).wrapping_add(center).clamp(0, max) as u16;
+            for r in 0..8 {
+                let row: [$t; 8] = std::array::from_fn(|c| ws[r * 8 + c]);
+                let dst = &mut out[r * stride..r * stride + 8];
+                if row[1..].iter().all(|&v| v == 0) {
+                    dst.fill(level(descale(row[0], pass1_bits + 3)));
+                    continue;
+                }
+                let o = idct_1d(row);
+                for (d, &v) in dst.iter_mut().zip(&o) {
+                    *d = level(descale(v, shift));
+                }
+            }
+        }
+    };
 }
 
-/// One 8-point 1-D IDCT (shared by both passes). Returns the eight outputs
-/// before the final descaling: (tmp10 ± tmp3, tmp11 ± tmp2, tmp12 ± tmp1, tmp13 ± tmp0).
-#[inline(always)]
-fn idct_1d(i: [i64; 8], dc_shift: u32) -> [i64; 8] {
-    // Even part
-    let z2 = i[2];
-    let z3 = i[6];
-    let z1 = (z2 + z3) * FIX_0_541196100;
-    let tmp2 = z1 + z3 * -FIX_1_847759065;
-    let tmp3 = z1 + z2 * FIX_0_765366865;
-    let tmp0 = (i[0] + i[4]) << dc_shift;
-    let tmp1 = (i[0] - i[4]) << dc_shift;
-    let tmp10 = tmp0 + tmp3;
-    let tmp13 = tmp0 - tmp3;
-    let tmp11 = tmp1 + tmp2;
-    let tmp12 = tmp1 - tmp2;
-
-    // Odd part
-    let (mut t0, mut t1, mut t2, mut t3) = (i[7], i[5], i[3], i[1]);
-    let z1 = t0 + t3;
-    let z2 = t1 + t2;
-    let z3 = t0 + t2;
-    let z4 = t1 + t3;
-    let z5 = (z3 + z4) * FIX_1_175875602;
-    t0 *= FIX_0_298631336;
-    t1 *= FIX_2_053119869;
-    t2 *= FIX_3_072711026;
-    t3 *= FIX_1_501321110;
-    let z1 = z1 * -FIX_0_899976223;
-    let z2 = z2 * -FIX_2_562915447;
-    let z3 = z3 * -FIX_1_961570560 + z5;
-    let z4 = z4 * -FIX_0_390180644 + z5;
-    t0 += z1 + z3;
-    t1 += z2 + z4;
-    t2 += z2 + z3;
-    t3 += z1 + z4;
-
-    [
-        tmp10 + t3,
-        tmp11 + t2,
-        tmp12 + t1,
-        tmp13 + t0,
-        tmp13 - t0,
-        tmp12 - t1,
-        tmp11 - t2,
-        tmp10 - t3,
-    ]
-}
+idct_impl!(idct_i32, i32);
+idct_impl!(idct_i64, i64);
 
 /// Inverse DCT of one block of dequantized coefficients (natural order),
 /// writing level-shifted, clamped samples of `precision` (8 or 12) bits.
 pub(crate) fn idct_block(coef: &[i32; 64], precision: u8, out: &mut [u16], stride: usize) {
-    // libjpeg uses PASS1_BITS = 2 for 8-bit and 1 for 12-bit samples.
-    let pass1_bits: u32 = if precision > 8 { 1 } else { 2 };
-    let max = (1i64 << precision) - 1;
-    let center = 1i64 << (precision - 1);
-    let mut ws = [0i64; 64];
-
-    // Pass 1: columns.
-    for c in 0..8 {
-        let col: [i64; 8] = std::array::from_fn(|r| coef[r * 8 + c] as i64);
-        if col[1..].iter().all(|&v| v == 0) {
-            let dc = col[0] << pass1_bits;
-            for r in 0..8 {
-                ws[r * 8 + c] = dc;
-            }
-            continue;
-        }
-        let o = idct_1d(col, CONST_BITS);
-        for r in 0..8 {
-            ws[r * 8 + c] = descale(o[r], CONST_BITS - pass1_bits);
-        }
-    }
-
-    // Pass 2: rows.
-    let shift = CONST_BITS + pass1_bits + 3;
-    for r in 0..8 {
-        let row: [i64; 8] = std::array::from_fn(|c| ws[r * 8 + c]);
-        let dst = &mut out[r * stride..r * stride + 8];
-        if row[1..].iter().all(|&v| v == 0) {
-            let v = (descale(row[0], pass1_bits + 3) + center).clamp(0, max) as u16;
-            dst.fill(v);
-            continue;
-        }
-        let o = idct_1d(row, CONST_BITS);
-        for c in 0..8 {
-            dst[c] = (descale(o[c], shift) + center).clamp(0, max) as u16;
-        }
+    let max = (1i32 << precision) - 1;
+    let center = 1i32 << (precision - 1);
+    if precision > 8 {
+        idct_i64(coef, 1, center, max, out, stride);
+    } else {
+        idct_i32(coef, 2, center, max, out, stride);
     }
 }
 

@@ -17,6 +17,10 @@ pub(crate) struct HuffmanTable {
     /// `values` index offset for each length.
     valoffset: [i32; 17],
     values: Vec<u8>,
+    /// For AC tables, decoding a code and its magnitude bits at once when
+    /// together they fit the lookahead (as stb_image): `fast_ac[peek9] =
+    /// value << 16 | run << 8 | total length`, 0 = not available.
+    fast_ac: Box<[i32; 1 << LOOKAHEAD]>,
 }
 
 impl HuffmanTable {
@@ -55,12 +59,37 @@ impl HuffmanTable {
             code <<= 1;
         }
         maxcode[17] = i32::MAX;
+        let mut fast_ac = Box::new([0i32; 1 << LOOKAHEAD]);
+        for (i, f) in fast_ac.iter_mut().enumerate() {
+            let entry = lookup[i];
+            let (len, rs) = ((entry >> 8) as u32, entry as u8);
+            let (run, s) = ((rs >> 4) as i32, (rs & 15) as u32);
+            if len == 0 || s == 0 || len + s > LOOKAHEAD {
+                continue;
+            }
+            let m = ((i as u32) >> (LOOKAHEAD - len - s)) & ((1 << s) - 1);
+            let v = extend(m, s);
+            *f = (v << 16) | (run << 8) | (len + s) as i32;
+        }
         Ok(HuffmanTable {
             lookup,
             maxcode,
             valoffset,
             values: values.to_vec(),
+            fast_ac,
         })
+    }
+
+    /// Decode an AC code with its magnitude bits from the fast table:
+    /// `Some((run, value))`, or `None` if the slow path is needed.
+    #[inline]
+    pub(crate) fn decode_fast_ac(&self, reader: &mut BitReader<'_>) -> Option<(usize, i32)> {
+        let f = self.fast_ac[(reader.peek16() >> (16 - LOOKAHEAD)) as usize];
+        if f == 0 {
+            return None;
+        }
+        reader.consume((f & 0xFF) as u32);
+        Some((((f >> 8) & 0xFF) as usize, f >> 16))
     }
 
     /// Decode one symbol.
@@ -88,6 +117,17 @@ impl HuffmanTable {
             len += 1;
         }
         Err(Error::invalid(CODEC, "invalid Huffman code"))
+    }
+}
+
+/// F.2.2.1 EXTEND: the signed value of `s` magnitude bits `v`.
+#[inline]
+pub(crate) fn extend(v: u32, s: u32) -> i32 {
+    let v = v as i32;
+    if v < (1 << (s - 1)) {
+        v - (1 << s) + 1
+    } else {
+        v
     }
 }
 
