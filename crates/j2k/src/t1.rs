@@ -28,11 +28,6 @@ pub(crate) const STYLE_HT: u8 = 0x40;
 /// HT mixed mode: code-blocks may be HT or Part 1 (bits 6 and 7 set).
 pub(crate) const STYLE_HT_MIXED: u8 = 0xC0;
 
-const SIG: u8 = 1;
-const NEG: u8 = 2;
-const VISIT: u8 = 4;
-const REFINED: u8 = 8;
-
 // Neighbourhood word bits: significance of the 8 neighbours, and signs of the
 // 4 direct neighbours (set when they become significant).
 pub(crate) const N_W: u16 = 1 << 0;
@@ -169,8 +164,7 @@ fn sc_index(w: u16) -> usize {
 /// Buffers reused across the code-blocks decoded on a thread.
 #[derive(Default)]
 struct Scratch {
-    flags: Vec<u8>,
-    nb: Vec<u16>,
+    st: Vec<u32>,
     mag: Vec<i32>,
 }
 
@@ -178,188 +172,207 @@ thread_local! {
     static SCRATCH: std::cell::Cell<Scratch> = std::cell::Cell::new(Scratch::default());
 }
 
+// Per-sample state word: the neighbourhood bits (`N_*`, `NEG_*`, bits
+// 0..12) and the sample's own flags.
+const SIG: u32 = 1 << 12;
+const NEG: u32 = 1 << 13;
+const VISIT: u32 = 1 << 14;
+const REFINED: u32 = 1 << 15;
+
+/// A source of decisions: the MQ decoder, or raw (bypass) bits, which
+/// ignore the context.
+trait Bits {
+    fn decide(&mut self, cx: &mut Context) -> u32;
+}
+
+impl Bits for MqDecoder<'_> {
+    #[inline(always)]
+    fn decide(&mut self, cx: &mut Context) -> u32 {
+        self.decode(cx)
+    }
+}
+
+impl Bits for RawDecoder<'_> {
+    #[inline(always)]
+    fn decide(&mut self, _: &mut Context) -> u32 {
+        self.bit()
+    }
+}
+
 enum Coder<'a> {
     Mq(MqDecoder<'a>),
     Raw(RawDecoder<'a>),
 }
 
-struct Block<'a> {
+/// The decoding state of a code-block.
+struct Block {
     w: usize,
     h: usize,
     stride: usize,
-    /// Flags with a one-sample border.
-    flags: Vec<u8>,
-    /// Neighbourhood words, same layout as `flags`.
-    nb: Vec<u16>,
+    /// State words with a one-sample border.
+    st: Vec<u32>,
     /// Doubled magnitudes.
     mag: Vec<i32>,
-    orient: Orient,
-    vsc: bool,
+    zc: &'static [u8; 256],
     ctx: [Context; NUM_CONTEXTS],
-    coder: Coder<'a>,
 }
 
-impl Block<'_> {
-    #[inline]
+impl Block {
+    #[inline(always)]
     fn idx(&self, x: usize, y: usize) -> usize {
         (y + 1) * self.stride + x + 1
     }
 
-    /// Whether the neighbours below must be ignored (vertically causal mode).
-    #[inline]
-    fn exclude_below(&self, y: usize) -> bool {
-        self.vsc && y % 4 == 3
-    }
-
-    /// Neighbourhood word of (x, y), with the row below masked in
+    /// The state word at `i` (row `y`), with the row below masked in
     /// vertically causal mode.
-    #[inline]
-    fn nbw(&self, x: usize, y: usize) -> u16 {
-        let w = self.nb[self.idx(x, y)];
-        if self.exclude_below(y) { w & !BELOW } else { w }
-    }
-
-    /// Zero-coding context of (x, y).
-    #[inline]
-    fn zc(&self, x: usize, y: usize) -> usize {
-        ZC_LUT[self.orient as usize][(self.nbw(x, y) & 0xFF) as usize] as usize
-    }
-
-    #[inline]
-    fn decide(&mut self, cx: usize) -> u32 {
-        match &mut self.coder {
-            Coder::Mq(m) => m.decode(&mut self.ctx[cx]),
-            Coder::Raw(r) => r.bit(),
+    #[inline(always)]
+    fn word<const VSC: bool>(&self, i: usize, y: usize) -> u32 {
+        let w = self.st[i];
+        if VSC && y % 4 == 3 {
+            w & !(BELOW as u32)
+        } else {
+            w
         }
     }
 
-    #[inline]
-    fn raw_bit(&mut self) -> u32 {
-        match &mut self.coder {
-            Coder::Raw(r) => r.bit(),
-            Coder::Mq(_) => unreachable!("raw bit requested from MQ coder"),
-        }
+    #[inline(always)]
+    fn decide<B: Bits>(&mut self, bits: &mut B, cx: usize) -> u32 {
+        bits.decide(&mut self.ctx[cx])
     }
 
-    fn decode_sign(&mut self, x: usize, y: usize, raw: bool) -> bool {
-        if raw {
-            return self.raw_bit() == 1;
+    /// The sign of a sample becoming significant: a raw bit in raw passes,
+    /// otherwise sign-coded from the neighbourhood word `w`.
+    #[inline(always)]
+    fn sign<B: Bits, const RAW: bool>(&mut self, bits: &mut B, w: u32) -> bool {
+        if RAW {
+            return self.decide(bits, 0) == 1;
         }
-        let e = SC_LUT[sc_index(self.nbw(x, y))];
-        let bit = self.decide((e & 0x7F) as usize) ^ (e >> 7) as u32;
-        bit == 1
+        let e = SC_LUT[sc_index(w as u16)];
+        (self.decide(bits, (e & 0x7F) as usize) ^ (e >> 7) as u32) == 1
     }
 
-    #[inline]
-    fn set_significant(&mut self, x: usize, y: usize, p: u32, negative: bool) {
-        let i = self.idx(x, y);
-        self.flags[i] |= SIG | if negative { NEG } else { 0 };
+    #[inline(always)]
+    fn set_significant(&mut self, i: usize, x: usize, y: usize, p: u32, negative: bool) {
+        self.st[i] |= SIG | if negative { NEG } else { 0 };
         self.mag[y * self.w + x] = 3 << p;
         let s = self.stride;
-        let nb = &mut self.nb;
-        let n = |bit: u16| if negative { bit } else { 0 };
-        nb[i + 1] |= N_W | n(NEG_W);
-        nb[i - 1] |= N_E | n(NEG_E);
-        nb[i + s] |= N_N | n(NEG_N);
-        nb[i - s] |= N_S | n(NEG_S);
-        nb[i + s + 1] |= N_NW;
-        nb[i + s - 1] |= N_NE;
-        nb[i - s + 1] |= N_SW;
-        nb[i - s - 1] |= N_SE;
+        let n = |bit: u16| if negative { bit as u32 } else { 0 };
+        let st = &mut self.st;
+        st[i + 1] |= N_W as u32 | n(NEG_W);
+        st[i - 1] |= N_E as u32 | n(NEG_E);
+        st[i + s] |= N_N as u32 | n(NEG_N);
+        st[i - s] |= N_S as u32 | n(NEG_S);
+        st[i + s + 1] |= N_NW as u32;
+        st[i + s - 1] |= N_NE as u32;
+        st[i - s + 1] |= N_SW as u32;
+        st[i - s - 1] |= N_SE as u32;
     }
 
-    fn significance_pass(&mut self, p: u32, raw: bool) {
+    fn significance_pass<B: Bits, const VSC: bool, const RAW: bool>(
+        &mut self,
+        bits: &mut B,
+        p: u32,
+    ) {
         for s in (0..self.h).step_by(4) {
             for x in 0..self.w {
                 for y in s..(s + 4).min(self.h) {
                     let i = self.idx(x, y);
-                    if self.flags[i] & SIG != 0 {
+                    let w = self.word::<VSC>(i, y);
+                    if w & SIG != 0 || w & 0xFF == 0 {
                         continue;
                     }
-                    if self.nbw(x, y) & 0xFF == 0 {
-                        continue;
+                    let cx = self.zc[(w & 0xFF) as usize] as usize;
+                    if self.decide(bits, cx) == 1 {
+                        let neg = self.sign::<B, RAW>(bits, w);
+                        self.set_significant(i, x, y, p, neg);
                     }
-                    let bit = if raw {
-                        self.raw_bit()
-                    } else {
-                        self.decide(self.zc(x, y))
-                    };
-                    if bit == 1 {
-                        let neg = self.decode_sign(x, y, raw);
-                        self.set_significant(x, y, p, neg);
-                    }
-                    self.flags[i] |= VISIT;
+                    self.st[i] |= VISIT;
                 }
             }
         }
     }
 
-    fn refinement_pass(&mut self, p: u32, raw: bool) {
+    fn refinement_pass<B: Bits, const VSC: bool>(&mut self, bits: &mut B, p: u32) {
         for s in (0..self.h).step_by(4) {
             for x in 0..self.w {
                 for y in s..(s + 4).min(self.h) {
                     let i = self.idx(x, y);
-                    let f = self.flags[i];
-                    if f & SIG == 0 || f & VISIT != 0 {
+                    let w = self.word::<VSC>(i, y);
+                    if w & SIG == 0 || w & VISIT != 0 {
                         continue;
                     }
-                    let bit = if raw {
-                        self.raw_bit()
+                    let cx = if w & REFINED != 0 {
+                        16
+                    } else if w & 0xFF == 0 {
+                        14
                     } else {
-                        let cx = if f & REFINED != 0 {
-                            16
-                        } else {
-                            if self.nbw(x, y) & 0xFF == 0 { 14 } else { 15 }
-                        };
-                        self.decide(cx)
+                        15
                     };
+                    let bit = self.decide(bits, cx);
                     let m = &mut self.mag[y * self.w + x];
                     if bit == 1 {
                         *m += 1 << p;
                     } else {
                         *m -= 1 << p;
                     }
-                    self.flags[i] |= REFINED;
+                    self.st[i] |= REFINED;
                 }
             }
         }
     }
 
-    fn cleanup_pass(&mut self, p: u32) {
+    fn cleanup_pass<B: Bits, const VSC: bool>(&mut self, bits: &mut B, p: u32) {
         for s in (0..self.h).step_by(4) {
             let full = s + 4 <= self.h;
             for x in 0..self.w {
                 let mut start = s;
                 if full {
-                    let all_clear = (s..s + 4).all(|y| {
-                        let f = self.flags[self.idx(x, y)];
-                        f & (SIG | VISIT) == 0 && self.nbw(x, y) & 0xFF == 0
-                    });
+                    let all_clear = (s..s + 4)
+                        .all(|y| self.word::<VSC>(self.idx(x, y), y) & (SIG | VISIT | 0xFF) == 0);
                     if all_clear {
-                        if self.decide(CTX_RL) == 0 {
+                        if self.decide(bits, CTX_RL) == 0 {
                             continue;
                         }
-                        let r = (self.decide(CTX_UNI) << 1) | self.decide(CTX_UNI);
+                        let r = (self.decide(bits, CTX_UNI) << 1) | self.decide(bits, CTX_UNI);
                         let y = s + r as usize;
-                        let neg = self.decode_sign(x, y, false);
-                        self.set_significant(x, y, p, neg);
+                        let i = self.idx(x, y);
+                        let neg = self.sign::<B, false>(bits, self.word::<VSC>(i, y));
+                        self.set_significant(i, x, y, p, neg);
                         start = y + 1;
                     }
                 }
                 for y in start..(s + 4).min(self.h) {
                     let i = self.idx(x, y);
-                    if self.flags[i] & (SIG | VISIT) == 0 && self.decide(self.zc(x, y)) == 1 {
-                        let neg = self.decode_sign(x, y, false);
-                        self.set_significant(x, y, p, neg);
+                    let w = self.word::<VSC>(i, y);
+                    if w & (SIG | VISIT) == 0
+                        && self.decide(bits, self.zc[(w & 0xFF) as usize] as usize) == 1
+                    {
+                        let neg = self.sign::<B, false>(bits, w);
+                        self.set_significant(i, x, y, p, neg);
                     }
-                    self.flags[i] &= !VISIT;
+                    self.st[i] &= !VISIT;
                 }
                 // Samples above `start` in an RL-coded column were not visited.
                 for y in s..start {
                     let i = self.idx(x, y);
-                    self.flags[i] &= !VISIT;
+                    self.st[i] &= !VISIT;
                 }
             }
+        }
+    }
+
+    /// Run pass `ptype` (0 significance, 1 refinement, 2 cleanup) on
+    /// bit-plane `p` with the coder's bits; `raw`: a raw (bypass) pass.
+    fn pass<B: Bits>(&mut self, bits: &mut B, ptype: u8, p: u32, raw: bool, vsc: bool) {
+        match (ptype, vsc, raw) {
+            (0, false, false) => self.significance_pass::<B, false, false>(bits, p),
+            (0, false, true) => self.significance_pass::<B, false, true>(bits, p),
+            (0, true, false) => self.significance_pass::<B, true, false>(bits, p),
+            (0, true, true) => self.significance_pass::<B, true, true>(bits, p),
+            (1, false, _) => self.refinement_pass::<B, false>(bits, p),
+            (1, true, _) => self.refinement_pass::<B, true>(bits, p),
+            (_, false, _) => self.cleanup_pass::<B, false>(bits, p),
+            (_, true, _) => self.cleanup_pass::<B, true>(bits, p),
         }
     }
 }
@@ -405,21 +418,19 @@ pub(crate) fn decode(
         v.clear();
         v.resize(n, T::default());
     }
-    reset(&mut scratch.flags, stride * (h + 2));
-    reset(&mut scratch.nb, stride * (h + 2));
+    reset(&mut scratch.st, stride * (h + 2));
     reset(&mut scratch.mag, w * h);
     let mut b = Block {
         w,
         h,
         stride,
-        flags: std::mem::take(&mut scratch.flags),
-        nb: std::mem::take(&mut scratch.nb),
+        st: std::mem::take(&mut scratch.st),
         mag: std::mem::take(&mut scratch.mag),
-        orient,
-        vsc: style & STYLE_VSC != 0,
+        zc: &ZC_LUT[orient as usize],
         ctx: initial_contexts(),
-        coder: Coder::Raw(RawDecoder::new(&[])),
     };
+    let vsc = style & STYLE_VSC != 0;
+    let mut coder = Coder::Raw(RawDecoder::new(&[]));
     let bypass = style & STYLE_BYPASS != 0;
     let mut seg = 0usize;
     let mut left_in_seg = 0u32;
@@ -438,7 +449,7 @@ pub(crate) fn decode(
             seg += 1;
             left_in_seg = s.passes;
             if left_in_seg > 0 {
-                b.coder = if raw {
+                coder = if raw {
                     Coder::Raw(RawDecoder::new(&s.data))
                 } else {
                     Coder::Mq(MqDecoder::new(&s.data))
@@ -449,34 +460,34 @@ pub(crate) fn decode(
         if style & STYLE_RESET != 0 && k > 0 {
             b.ctx = initial_contexts();
         }
-        match ptype {
-            0 => b.significance_pass(plane, raw),
-            1 => b.refinement_pass(plane, raw),
-            _ => {
-                b.cleanup_pass(plane);
-                if style & STYLE_SEGSYM != 0 {
-                    let mut sym = 0;
-                    for _ in 0..4 {
-                        sym = (sym << 1) | b.decide(CTX_UNI);
-                    }
-                    if sym != 0b1010 {
-                        // Corrupt data: stop decoding this block (keep what we have).
-                        break;
-                    }
-                }
+        match &mut coder {
+            Coder::Mq(m) => b.pass(m, ptype, plane, raw, vsc),
+            Coder::Raw(r) => b.pass(r, ptype, plane, raw, vsc),
+        }
+        if ptype == 2 && style & STYLE_SEGSYM != 0 {
+            let mut sym = 0;
+            for _ in 0..4 {
+                let bit = match &mut coder {
+                    Coder::Mq(m) => b.decide(m, CTX_UNI),
+                    Coder::Raw(r) => b.decide(r, CTX_UNI),
+                };
+                sym = (sym << 1) | bit;
+            }
+            if sym != 0b1010 {
+                // Corrupt data: stop decoding this block (keep what we have).
+                break;
             }
         }
     }
     for y in 0..h {
         for x in 0..w {
-            let f = b.flags[(y + 1) * stride + x + 1];
+            let f = b.st[(y + 1) * stride + x + 1];
             let m = b.mag[y * w + x];
             out[y * w + x] = if f & NEG != 0 { -m } else { m };
         }
     }
     SCRATCH.set(Scratch {
-        flags: b.flags,
-        nb: b.nb,
+        st: b.st,
         mag: b.mag,
     });
     Ok(())
