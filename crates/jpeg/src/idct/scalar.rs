@@ -1,25 +1,7 @@
-//! Accurate integer inverse DCT.
-//!
-//! This is the "ISLOW" algorithm of the IJG library (jidctint.c, Loeffler,
-//! Ligtenberg & Moschytz), reproduced bit-exactly so decoded output matches
-//! libjpeg 6b / DCMTK / libjpeg-turbo. As in libjpeg, 8-bit data is
-//! transformed in 32-bit and 12-bit data in 64-bit arithmetic; valid data
-//! never overflows, and corrupt coefficients wrap instead of panicking.
+//! Scalar ISLOW IDCT (libjpeg jidctint.c), with libjpeg's shortcuts for
+//! columns and rows whose AC terms are all zero.
 
-const CONST_BITS: u32 = 13;
-
-const FIX_0_298631336: i32 = 2446;
-const FIX_0_390180644: i32 = 3196;
-const FIX_0_541196100: i32 = 4433;
-const FIX_0_765366865: i32 = 6270;
-const FIX_0_899976223: i32 = 7373;
-const FIX_1_175875602: i32 = 9633;
-const FIX_1_501321110: i32 = 12299;
-const FIX_1_847759065: i32 = 15137;
-const FIX_1_961570560: i32 = 16069;
-const FIX_2_053119869: i32 = 16819;
-const FIX_2_562915447: i32 = 20995;
-const FIX_3_072711026: i32 = 25172;
+use super::*;
 
 /// Defines `$idct`, the IDCT in `$t` arithmetic: columns, then rows, each
 /// with libjpeg's shortcut for all-zero AC terms. libjpeg uses PASS1_BITS = 2
@@ -128,13 +110,20 @@ idct_impl!(idct_i64, i64);
 
 /// Inverse DCT of one block of dequantized coefficients (natural order),
 /// writing level-shifted, clamped samples of `precision` (8 or 12) bits.
-pub(crate) fn idct_block(coef: &[i32; 64], precision: u8, out: &mut [u16], stride: usize) {
+pub(super) fn idct_block(coef: &[i32; 64], precision: u8, out: &mut [u16], stride: usize) {
     let max = (1i32 << precision) - 1;
     let center = 1i32 << (precision - 1);
     if precision > 8 {
         idct_i64(coef, 1, center, max, out, stride);
     } else {
         idct_i32(coef, 2, center, max, out, stride);
+    }
+}
+
+/// 8-bit IDCT of each block into the matching 8 x 8 output block.
+pub(super) fn idct8(coefs: &[[i32; 64]], out: &mut [[u16; 64]]) {
+    for (c, o) in coefs.iter().zip(out.iter_mut()) {
+        idct_i32(c, 2, 128, 255, o, 8);
     }
 }
 

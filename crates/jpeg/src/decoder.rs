@@ -5,7 +5,8 @@ use super::CODEC;
 use super::bitreader::BitReader;
 use super::color::{Plane, Sample, Upsampler, ycbcr_to_rgb};
 use super::huffman::HuffmanTable;
-use super::idct::idct_block;
+use super::idct::idct_blocks;
+use dicom_jpeg_common::simd::{self, Level};
 use dicom_jpeg_common::{
     ColorOutput, ColorSpace, DecodeOptions, Image, ImageInfo, Limits, Samples,
 };
@@ -509,9 +510,9 @@ impl<'a> Decoder<'a> {
             .collect::<Result<_>>()?;
         let mut reader = BitReader::new(self.data, self.pos);
         let mut pred = vec![0i32; scan.components.len()];
-        let mut coef = [0i32; 64];
         let planes = &mut self.planes;
         let precision = frame.precision;
+        let mut batch = IdctBatch::new(precision);
 
         let mut decode_block = |reader: &mut BitReader<'_>,
                                 si: usize,
@@ -522,7 +523,7 @@ impl<'a> Decoder<'a> {
             let (dc, ac) = tables[si];
             let ac = ac.expect("AC table");
             let q = &quant[si];
-            coef.fill(0);
+            let coef = batch.slot();
             let s = dc.decode(reader)? as u32;
             if s > 16 {
                 return Err(Error::invalid(CODEC, "DC magnitude category > 16"));
@@ -556,10 +557,9 @@ impl<'a> Decoder<'a> {
                 coef[ZIGZAG[k]] = reader.receive_extend(s).wrapping_mul(q[k] as i32);
                 k += 1;
             }
-            let plane = &mut planes[scan.components[si].index];
-            let off = by * 8 * plane.stride + bx * 8;
-            let stride = plane.stride;
-            idct_block(&coef, precision, &mut plane.data[off..], stride);
+            let index = scan.components[si].index;
+            let off = by * 8 * planes[index].stride + bx * 8;
+            batch.commit(index, off, planes);
             Ok(())
         };
 
@@ -611,6 +611,7 @@ impl<'a> Decoder<'a> {
                 }
             }
         }
+        batch.flush(planes);
         Ok(reader.end_position())
     }
 
@@ -837,5 +838,66 @@ impl<'a> Decoder<'a> {
             }
         }
         out
+    }
+}
+
+/// Dequantised blocks waiting for the inverse DCT, which runs on batches
+/// (for SIMD) and copies the results into the planes.
+struct IdctBatch {
+    level: Level,
+    precision: u8,
+    len: usize,
+    coefs: Vec<[i32; 64]>,
+    out: Vec<[u16; 64]>,
+    /// Plane index and sample offset of each block.
+    dst: Vec<(usize, usize)>,
+}
+
+impl IdctBatch {
+    const SIZE: usize = 16;
+
+    fn new(precision: u8) -> Self {
+        IdctBatch {
+            level: simd::level(),
+            precision,
+            len: 0,
+            coefs: vec![[0; 64]; Self::SIZE],
+            out: vec![[0; 64]; Self::SIZE],
+            dst: vec![(0, 0); Self::SIZE],
+        }
+    }
+
+    /// The zeroed coefficients of the next block.
+    fn slot(&mut self) -> &mut [i32; 64] {
+        let c = &mut self.coefs[self.len];
+        c.fill(0);
+        c
+    }
+
+    /// Queue the block in `slot()` for the 8 x 8 area at `off` in `planes[plane]`.
+    fn commit(&mut self, plane: usize, off: usize, planes: &mut [Plane]) {
+        self.dst[self.len] = (plane, off);
+        self.len += 1;
+        if self.len == Self::SIZE {
+            self.flush(planes);
+        }
+    }
+
+    fn flush(&mut self, planes: &mut [Plane]) {
+        let n = self.len;
+        idct_blocks(
+            self.level,
+            &self.coefs[..n],
+            self.precision,
+            &mut self.out[..n],
+        );
+        for (block, &(p, off)) in self.out[..n].iter().zip(&self.dst[..n]) {
+            let plane = &mut planes[p];
+            let stride = plane.stride;
+            for (r, row) in block.as_chunks::<8>().0.iter().enumerate() {
+                plane.data[off + r * stride..][..8].copy_from_slice(row);
+            }
+        }
+        self.len = 0;
     }
 }
