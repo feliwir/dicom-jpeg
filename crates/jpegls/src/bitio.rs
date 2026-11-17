@@ -76,6 +76,24 @@ impl<'a> BitReader<'a> {
     /// Decode a limited-length Golomb code (A.5.3).
     #[inline]
     pub(crate) fn golomb(&mut self, k: u32, limit: u32, qbpp: u32) -> Result<i32> {
+        // Fast path: the unary prefix, its terminating 1 and the k low bits
+        // are all buffered, and the code is not an escape.
+        if self.r.available() < 32 {
+            self.r.fill();
+            self.check()?;
+        }
+        let (buf, avail) = (self.r.buffer(), self.r.available());
+        let zeros = buf.leading_zeros();
+        let len = zeros + 1 + k;
+        if zeros < limit - qbpp - 1 && len < avail.min(64) {
+            let low = if k == 0 {
+                0
+            } else {
+                ((buf << (zeros + 1)) >> (64 - k)) as i32
+            };
+            self.r.consume(len);
+            return Ok(((zeros as i32) << k) + low);
+        }
         let high = self.unary(limit)?;
         if high >= limit - qbpp - 1 {
             return Ok(self.bits(qbpp)? + 1);

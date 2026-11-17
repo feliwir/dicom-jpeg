@@ -120,7 +120,19 @@ struct Decoder<'r, 'a> {
 }
 
 impl Decoder<'_, '_> {
-    fn regular(&mut self, s: &mut State, q: (i32, i32, i32), pred: i32) -> Result<i32> {
+    /// NEAR of the scan: a constant 0 when `L` (lossless).
+    #[inline(always)]
+    fn near<const L: bool>(&self) -> i32 {
+        if L { 0 } else { self.p.near }
+    }
+
+    fn regular<const L: bool>(
+        &mut self,
+        s: &mut State,
+        q: (i32, i32, i32),
+        pred: i32,
+    ) -> Result<i32> {
+        let near = self.near::<L>();
         let p = &self.p;
         let (ci, sg) = context(q.0, q.1, q.2);
         let ctx = &mut s.regular[ci];
@@ -128,14 +140,14 @@ impl Decoder<'_, '_> {
         let k = ctx.golomb_k()?;
         let m = self.r.golomb(k, p.limit, p.qbpp)?;
         let mut e = (m >> 1) ^ -(m & 1);
-        if ctx.special_mapping(k, p.near) {
+        if ctx.special_mapping(k, near) {
             e = -(e + 1);
         }
         if e.abs() > 65535 {
             return Err(Error::invalid(CODEC, "prediction error out of range"));
         }
-        ctx.update(e, p.near, p.reset);
-        Ok(p.reconstruct(px, sg * e))
+        ctx.update(e, near, p.reset);
+        Ok(p.reconstruct_near(px, sg * e, near))
     }
 
     fn ri_error(&mut self, s: &mut State, which: usize) -> Result<i32> {
@@ -172,8 +184,13 @@ impl Decoder<'_, '_> {
     }
 
     /// Decode one line of `N`-sample pixels.
-    fn line<const N: usize>(&mut self, s: &mut State, l: &mut Lines, width: usize) -> Result<()> {
-        let near = self.p.near;
+    fn line<const N: usize, const L: bool>(
+        &mut self,
+        s: &mut State,
+        l: &mut Lines,
+        width: usize,
+    ) -> Result<()> {
+        let near = self.near::<L>();
         let (prev, cur) = (&l.prev[..(width + 2) * N], &mut l.cur[..(width + 2) * N]);
         let mut x = 1usize;
         while x <= width {
@@ -195,7 +212,7 @@ impl Decoder<'_, '_> {
                 for c in 0..N {
                     let (ra, rb, rc, rd) = nb(cur, c);
                     let q = (self.q.q(rd - rb), self.q.q(rb - rc), self.q.q(rc - ra));
-                    cur[x * N + c] = self.regular(s, q, predict(ra, rb, rc))?;
+                    cur[x * N + c] = self.regular::<L>(s, q, predict(ra, rb, rc))?;
                 }
                 x += 1;
                 continue;
@@ -216,10 +233,10 @@ impl Decoder<'_, '_> {
                 let rb = prev[end * N + c];
                 cur[end * N + c] = if N == 1 && (ra - rb).abs() <= near {
                     let e = self.ri_error(s, 1)?;
-                    self.p.reconstruct(ra, e)
+                    self.p.reconstruct_near(ra, e, near)
                 } else {
                     let e = self.ri_error(s, 0)?;
-                    self.p.reconstruct(rb, e * sign(rb - ra))
+                    self.p.reconstruct_near(rb, e * sign(rb - ra), near)
                 };
             }
             s.run_index = s.run_index.saturating_sub(1);
@@ -257,11 +274,15 @@ pub(crate) fn decode_scan(
                 p: *p,
                 q: &quantizer,
             };
-            match n {
-                1 => d.line::<1>(state, lines, width)?,
-                2 => d.line::<2>(state, lines, width)?,
-                3 => d.line::<3>(state, lines, width)?,
-                _ => d.line::<4>(state, lines, width)?,
+            match (n, p.near == 0) {
+                (1, true) => d.line::<1, true>(state, lines, width)?,
+                (2, true) => d.line::<2, true>(state, lines, width)?,
+                (3, true) => d.line::<3, true>(state, lines, width)?,
+                (_, true) => d.line::<4, true>(state, lines, width)?,
+                (1, false) => d.line::<1, false>(state, lines, width)?,
+                (2, false) => d.line::<2, false>(state, lines, width)?,
+                (3, false) => d.line::<3, false>(state, lines, width)?,
+                (_, false) => d.line::<4, false>(state, lines, width)?,
             }
             for c in 0..n {
                 let row = &mut planes[g + c][y * width..(y + 1) * width];
@@ -286,22 +307,35 @@ struct Encoder<'w> {
 
 #[cfg(feature = "encode")]
 impl Encoder<'_> {
-    fn regular(&mut self, s: &mut State, q: (i32, i32, i32), pred: i32, x: i32) -> i32 {
+    /// NEAR of the scan: a constant 0 when `L` (lossless).
+    #[inline(always)]
+    fn near<const L: bool>(&self) -> i32 {
+        if L { 0 } else { self.p.near }
+    }
+
+    fn regular<const L: bool>(
+        &mut self,
+        s: &mut State,
+        q: (i32, i32, i32),
+        pred: i32,
+        x: i32,
+    ) -> i32 {
+        let near = self.near::<L>();
         let p = &self.p;
         let (ci, sg) = context(q.0, q.1, q.2);
         let ctx = &mut s.regular[ci];
         let px = p.clamp(pred + sg * ctx.c);
         let k = ctx.golomb_k().expect("encoder contexts stay in range");
-        let e = p.modulo_range(p.quantize_error(sg * (x - px)));
-        let e2 = if ctx.special_mapping(k, p.near) {
+        let e = p.modulo_range(p.quantize_error_near(sg * (x - px), near));
+        let e2 = if ctx.special_mapping(k, near) {
             -(e + 1)
         } else {
             e
         };
         let m = if e2 >= 0 { 2 * e2 } else { -2 * e2 - 1 };
         self.w.golomb(m, k, p.limit, p.qbpp);
-        ctx.update(e, p.near, p.reset);
-        p.reconstruct(px, sg * e)
+        ctx.update(e, near, p.reset);
+        p.reconstruct_near(px, sg * e, near)
     }
 
     fn ri_error(&mut self, s: &mut State, which: usize, e: i32) {
@@ -335,14 +369,14 @@ impl Encoder<'_> {
     /// Encode one line of `N`-sample pixels; `src[c]` is the line of
     /// component `c`. The current line buffer receives the reconstructed
     /// samples.
-    fn line<const N: usize>(
+    fn line<const N: usize, const L: bool>(
         &mut self,
         s: &mut State,
         l: &mut Lines,
         width: usize,
         src: [&[u16]; N],
     ) {
-        let near = self.p.near;
+        let near = self.near::<L>();
         let (prev, cur) = (&l.prev[..(width + 2) * N], &mut l.cur[..(width + 2) * N]);
         let src = src.map(|r| &r[..width]);
         let mut x = 1usize;
@@ -365,7 +399,7 @@ impl Encoder<'_> {
                     let (ra, rb, rc, rd) = nb(cur, c);
                     let q = (self.q.q(rd - rb), self.q.q(rb - rc), self.q.q(rc - ra));
                     let v = src[c][x - 1] as i32;
-                    cur[x * N + c] = self.regular(s, q, predict(ra, rb, rc), v);
+                    cur[x * N + c] = self.regular::<L>(s, q, predict(ra, rb, rc), v);
                 }
                 x += 1;
                 continue;
@@ -391,14 +425,18 @@ impl Encoder<'_> {
                 let rb = prev[end * N + c];
                 let v = src[c][end - 1] as i32;
                 cur[end * N + c] = if N == 1 && (ra - rb).abs() <= near {
-                    let e = self.p.modulo_range(self.p.quantize_error(v - ra));
+                    let e = self
+                        .p
+                        .modulo_range(self.p.quantize_error_near(v - ra, near));
                     self.ri_error(s, 1, e);
-                    self.p.reconstruct(ra, e)
+                    self.p.reconstruct_near(ra, e, near)
                 } else {
                     let sg = sign(rb - ra);
-                    let e = self.p.modulo_range(self.p.quantize_error(sg * (v - rb)));
+                    let e = self
+                        .p
+                        .modulo_range(self.p.quantize_error_near(sg * (v - rb), near));
                     self.ri_error(s, 0, e);
-                    self.p.reconstruct(rb, e * sg)
+                    self.p.reconstruct_near(rb, e * sg, near)
                 };
             }
             s.run_index = s.run_index.saturating_sub(1);
@@ -438,11 +476,19 @@ pub(crate) fn encode_scan(w: &mut BitWriter, p: &Params, layout: &ScanLayout, pl
                 q: &quantizer,
             };
             let row = |c: usize| &planes[g + c][y * width..(y + 1) * width];
-            match n {
-                1 => e.line::<1>(state, lines, width, [row(0)]),
-                2 => e.line::<2>(state, lines, width, [row(0), row(1)]),
-                3 => e.line::<3>(state, lines, width, [row(0), row(1), row(2)]),
-                _ => e.line::<4>(state, lines, width, [row(0), row(1), row(2), row(3)]),
+            match (n, p.near == 0) {
+                (1, true) => e.line::<1, true>(state, lines, width, [row(0)]),
+                (2, true) => e.line::<2, true>(state, lines, width, [row(0), row(1)]),
+                (3, true) => e.line::<3, true>(state, lines, width, [row(0), row(1), row(2)]),
+                (_, true) => {
+                    e.line::<4, true>(state, lines, width, [row(0), row(1), row(2), row(3)])
+                }
+                (1, false) => e.line::<1, false>(state, lines, width, [row(0)]),
+                (2, false) => e.line::<2, false>(state, lines, width, [row(0), row(1)]),
+                (3, false) => e.line::<3, false>(state, lines, width, [row(0), row(1), row(2)]),
+                (_, false) => {
+                    e.line::<4, false>(state, lines, width, [row(0), row(1), row(2), row(3)])
+                }
             }
             Ok(())
         },

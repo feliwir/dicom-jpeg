@@ -132,16 +132,17 @@ impl Params {
         }
     }
 
-    /// Prediction error quantization for near-lossless coding (A.4.4).
+    /// Prediction error quantization for near-lossless coding (A.4.4), with
+    /// `near` given (a constant 0 in lossless code paths).
     #[cfg(feature = "encode")]
-    #[inline]
-    pub(crate) fn quantize_error(&self, e: i32) -> i32 {
-        if self.near == 0 {
+    #[inline(always)]
+    pub(crate) fn quantize_error_near(&self, e: i32, near: i32) -> i32 {
+        if near == 0 {
             e
         } else if e > 0 {
-            (e + self.near) / (2 * self.near + 1)
+            (e + near) / (2 * near + 1)
         } else {
-            -((self.near - e) / (2 * self.near + 1))
+            -((near - e) / (2 * near + 1))
         }
     }
 
@@ -163,14 +164,15 @@ impl Params {
         v.clamp(0, self.maxval)
     }
 
-    /// Reconstructed sample from prediction and (quantized) error.
-    #[inline]
-    pub(crate) fn reconstruct(&self, px: i32, e: i32) -> i32 {
-        let step = 2 * self.near + 1;
+    /// Reconstructed sample from prediction and (quantized) error, with
+    /// `near` given (a constant 0 in lossless code paths).
+    #[inline(always)]
+    pub(crate) fn reconstruct_near(&self, px: i32, e: i32, near: i32) -> i32 {
+        let step = 2 * near + 1;
         let mut v = px + e * step;
-        if v < -self.near {
+        if v < -near {
             v += self.range * step;
-        } else if v > self.maxval + self.near {
+        } else if v > self.maxval + near {
             v -= self.range * step;
         }
         self.clamp(v)
