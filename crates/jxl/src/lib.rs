@@ -21,6 +21,7 @@ mod frame;
 mod gaborish;
 mod headers;
 mod modular;
+mod output;
 mod render;
 mod vardct;
 mod xyb;
@@ -33,10 +34,11 @@ pub mod kernels {
     pub use crate::dct::kernels::*;
     pub use crate::epf::kernels::*;
     pub use crate::gaborish::kernels::*;
+    pub use crate::output::kernels::*;
     pub use crate::xyb::kernels::*;
 }
 
-use dicom_jpeg_common::float::round_i32;
+use dicom_jpeg_common::simd;
 use dicom_jpeg_common::{Codec, ColorSpace, DecodeOptions, Image, ImageInfo};
 use dicom_jpeg_common::{Error, Result};
 
@@ -638,8 +640,16 @@ fn to_image(ih: &ImageHeader, canvas: Canvas) -> Result<Image> {
             Image::from_planes_with(info, &planes, |v| (v as i64).clamp(0, max) as u16)
         }
         FrameOut::Normalised(planes) => {
-            let planes: Vec<&[f32]> = planes[..nc].iter().map(|p| &p[..n]).collect();
-            Image::from_planes_with(info, &planes, |v| round_i32(v * maxf).clamp(0, top) as u16)
+            let level = simd::level();
+            let out = planes[..nc]
+                .iter()
+                .map(|p| {
+                    let mut o = vec![0u16; n];
+                    output::to_u16(level, &p[..n], maxf, top as u16, &mut o);
+                    o
+                })
+                .collect();
+            Image::from_u16_planes(level, info, out)
         }
         FrameOut::Linear(planes) => {
             let tf = match ih.color.transfer {
@@ -652,19 +662,35 @@ fn to_image(ih: &ImageHeader, canvas: Canvas) -> Result<Image> {
                     return Err(Error::unsupported(CODEC, "PQ / HLG transfer functions"));
                 }
             };
-            let luma: Vec<f32>;
-            let planes: Vec<&[f32]> = if nc == 1 {
-                luma = (planes[0][..n].iter().zip(&planes[1][..n]))
-                    .zip(&planes[2][..n])
-                    .map(|((r, g), b)| 0.2126 * r + 0.7152 * g + 0.0722 * b)
-                    .collect();
-                vec![&luma]
-            } else {
-                planes.iter().map(|p| &p[..n]).collect()
-            };
-            Image::from_planes_with(info, &planes, |v| {
-                round_i32(tf.encode(v) * maxf).clamp(0, u16::MAX as i32) as u16
-            })
+            // Per chunk (kept in the L1 cache): luma for grey output, the
+            // transfer function, then the integer conversion. Encoded values
+            // are within 0..=1, so the samples are within 0..=max.
+            let level = simd::level();
+            let mut out: Vec<Vec<u16>> = vec![vec![0u16; n]; nc];
+            const CHUNK: usize = 2048;
+            let (mut lin, mut enc) = (vec![0f32; CHUNK], vec![0f32; CHUNK]);
+            for start in (0..n).step_by(CHUNK) {
+                let len = CHUNK.min(n - start);
+                let range = start..start + len;
+                for (c, o) in out.iter_mut().enumerate() {
+                    let src = if nc == 1 {
+                        let (r, g, b) = (
+                            &planes[0][range.clone()],
+                            &planes[1][range.clone()],
+                            &planes[2][range.clone()],
+                        );
+                        for (l, ((r, g), b)) in lin.iter_mut().zip(r.iter().zip(g).zip(b)) {
+                            *l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                        }
+                        &lin[..len]
+                    } else {
+                        &planes[c][range.clone()]
+                    };
+                    tf.encode_into(src, &mut enc[..len]);
+                    output::to_u16(level, &enc[..len], maxf, u16::MAX, &mut o[range.clone()]);
+                }
+            }
+            Image::from_u16_planes(level, info, out)
         }
     }
 }

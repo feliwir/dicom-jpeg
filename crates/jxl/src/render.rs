@@ -91,6 +91,24 @@ pub(crate) enum Transfer {
 }
 
 impl Transfer {
+    /// `dst[i] = self.encode(src[i])`, with the choice of function made
+    /// once rather than per sample.
+    pub(crate) fn encode_into(&self, src: &[f32], dst: &mut [f32]) {
+        fn map(src: &[f32], dst: &mut [f32], f: impl Fn(f32) -> f32) {
+            for (d, &v) in dst.iter_mut().zip(src) {
+                *d = f(v);
+            }
+        }
+        match *self {
+            Transfer::Linear => map(src, dst, |v| Transfer::Linear.encode(v)),
+            Transfer::Srgb => map(src, dst, |v| Transfer::Srgb.encode(v)),
+            Transfer::Bt709 => map(src, dst, |v| Transfer::Bt709.encode(v)),
+            Transfer::Dci => map(src, dst, |v| Transfer::Dci.encode(v)),
+            Transfer::Gamma(g) => map(src, dst, |v| Transfer::Gamma(g).encode(v)),
+        }
+    }
+
+    #[inline(always)]
     pub(crate) fn encode(&self, v: f32) -> f32 {
         let v = v.clamp(0.0, 1.0);
         match *self {

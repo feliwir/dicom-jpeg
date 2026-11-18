@@ -1,7 +1,9 @@
 //! Image description and sample buffers.
 
 use crate::error::{Error, Result};
+use crate::interleave;
 use crate::options::Limits;
+use crate::simd::Level;
 
 /// Colour model of the samples in an [`Image`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -204,6 +206,44 @@ impl Image {
         let mask = ((1u32 << bits) - 1) as i32;
         let planes: Vec<&[i32]> = planes.iter().map(Vec::as_slice).collect();
         Self::from_planes_with(info, &planes, |v| (v.clamp(lo, hi) & mask) as u16)
+    }
+
+    /// An image from component planes of `width * height` stored samples
+    /// (within the range of `info`), interleaved with the SIMD kernels of
+    /// `level`. A single 16-bit plane is moved, not copied.
+    pub fn from_u16_planes(
+        level: Level,
+        info: ImageInfo,
+        mut planes: Vec<Vec<u16>>,
+    ) -> Result<Self> {
+        let nc = info.components as usize;
+        let n = info.width as usize * info.height as usize;
+        if planes.len() != nc || planes.iter().any(|p| p.len() != n) {
+            return Err(Error::input("planes do not match the image description"));
+        }
+        if !(1..=16).contains(&info.bits_per_sample) {
+            return Err(Error::input("bits per sample must be within 1..=16"));
+        }
+        let narrow = info.bits_per_sample <= 8;
+        let samples = match planes.as_mut_slice() {
+            [p] if narrow => Samples::U8(p.iter().map(|&v| v as u8).collect()),
+            [p] => Samples::U16(std::mem::take(p)),
+            [a, b, c] if narrow => {
+                let mut out = vec![0u8; 3 * n];
+                interleave::interleave3_u8(level, a, b, c, &mut out);
+                Samples::U8(out)
+            }
+            [a, b, c] => {
+                let mut out = vec![0u16; 3 * n];
+                interleave::interleave3_u16(level, a, b, c, &mut out);
+                Samples::U16(out)
+            }
+            _ => {
+                let planes: Vec<&[u16]> = planes.iter().map(Vec::as_slice).collect();
+                return Self::from_planes_with(info, &planes, |v| v);
+            }
+        };
+        Ok(Image { info, samples })
     }
 
     /// Interleave component planes of `width * height` values into an

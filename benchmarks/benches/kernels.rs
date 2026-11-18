@@ -276,6 +276,14 @@ fn jxl_kernels(c: &mut Criterion) {
         black_box(&row);
     });
 
+    // Float samples (0..1) to 16-bit integers.
+    let unit: Vec<f32> = samples(N, 20).iter().map(|&v| v as f32 / 255.0).collect();
+    let mut ints = vec![0u16; N];
+    group(c, "jxl/float->u16", N, |l| {
+        jxl::float_to_u16(l, &unit, 65535.0, 65535, &mut ints);
+        black_box(&ints);
+    });
+
     // XYB to linear RGB of N pixels (X small and signed, Y and B in 0..1).
     let xyb: [Vec<f32>; 3] = std::array::from_fn(|c| {
         samples(N, 17 + c as u32)
