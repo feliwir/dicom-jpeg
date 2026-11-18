@@ -5,6 +5,7 @@ use super::CODEC;
 use super::decoder::ZIGZAG;
 use super::fdct::{QuantTable, fdct_quantize};
 use super::huffman_encode::{BitWriter, EncodingTable, category, magnitude_bits};
+use super::zigzag::zigzag;
 use dicom_jpeg_common::interleave;
 use dicom_jpeg_common::simd::{self, Level};
 
@@ -345,21 +346,15 @@ fn encode_dct(process: Process, image: &Image, opts: &EncoderOptions) -> Result<
         let qt = QuantTable::new(&qtables[table as usize], coef_max);
         let mut blocks = Vec::with_capacity(bw * bh);
         let mut row = vec![[0i32; 64]; bw];
+        let (mut zz, mut nonzero) = (vec![[0i16; 64]; bw], vec![0u64; bw]);
         for by in 0..bh {
             fdct_quantize(level, &data[by * 8 * cw..], cw, precision, &qt, &mut row);
-            for coef in &row {
-                let mut zz = [0i16; 64];
-                let mut nonzero = 0u64;
-                for (k, z) in zz.iter_mut().enumerate() {
-                    let v = coef[ZIGZAG[k]];
-                    *z = v as i16;
-                    nonzero |= ((v != 0) as u64) << k;
-                }
-                blocks.push(Block {
-                    zz,
-                    ac: nonzero & !1,
-                });
-            }
+            zigzag(level, &row, &mut zz, &mut nonzero);
+            blocks.extend(
+                zz.iter()
+                    .zip(&nonzero)
+                    .map(|(&zz, &m)| Block { zz, ac: m & !1 }),
+            );
         }
         comps.push(Component {
             id: ci as u8 + 1,

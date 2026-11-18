@@ -97,6 +97,14 @@ fn jpeg_kernels(c: &mut Criterion) {
         black_box(&row);
     });
 
+    // Zig-zag reorder and non-zero mask of the quantised blocks.
+    let zz_in: Vec<[i32; 64]> = coefs.iter().map(|b| b.map(|v| v / 4)).collect();
+    let (mut zz, mut nonzero) = (vec![[0i16; 64]; blocks], vec![0u64; blocks]);
+    group(c, "jpeg/zigzag", N, |l| {
+        kernels::zigzag(l, &zz_in, &mut zz, &mut nonzero);
+        black_box((&zz, &nonzero));
+    });
+
     // Upsampling: W/2-wide chroma rows to W-wide rows (N output samples).
     let chroma = samples(N / 2, 2);
     let mut up = vec![0u16; W];

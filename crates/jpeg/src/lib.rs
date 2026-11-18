@@ -24,6 +24,8 @@ mod idct;
 mod rgb_ycbcr;
 mod upsample;
 mod ycbcr;
+#[cfg(feature = "encode")]
+mod zigzag;
 
 #[cfg(feature = "encode")]
 pub use encoder::{ChromaSubsampling, EncoderOptions, Process, encode_with};
@@ -39,6 +41,7 @@ pub mod kernels {
     pub use crate::rgb_ycbcr::rgb_to_ycbcr;
     pub use crate::upsample::{h2v1 as upsample_h2v1, h2v2 as upsample_h2v2};
     pub use crate::ycbcr::ycbcr_to_rgb;
+    pub use crate::zigzag::zigzag;
 }
 
 use dicom_jpeg_common::Result;
