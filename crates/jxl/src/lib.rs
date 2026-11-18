@@ -16,6 +16,7 @@ mod encode;
 #[cfg(feature = "encode")]
 pub use encode::encode_lossless;
 mod entropy;
+mod epf;
 mod frame;
 mod headers;
 mod modular;
@@ -28,6 +29,7 @@ mod vardct;
 #[doc(hidden)]
 pub mod kernels {
     pub use crate::dct::kernels::*;
+    pub use crate::epf::kernels::*;
 }
 
 use dicom_jpeg_common::float::round_i32;
@@ -514,7 +516,7 @@ fn decode_frame(
         render::gaborish(&mut planes, w, h, fh.gab_weights);
     }
     if fh.epf_iters > 0 {
-        render::epf(&mut planes, w, h, &sigma, bw, fh);
+        epf::epf(&mut planes, w, h, &sigma, bw, fh);
     }
     if ih.xyb_encoded {
         render::xyb_to_linear(&mut planes, &ih.opsin, ih.intensity_target);

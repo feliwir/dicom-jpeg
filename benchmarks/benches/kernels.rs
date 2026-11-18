@@ -218,6 +218,23 @@ fn jxl_kernels(c: &mut Criterion) {
             black_box(&work);
         });
     }
+
+    // EPF steps on W x H planes of smooth content with a little noise;
+    // every block filtered (sigma 1).
+    let planes: [Vec<f32>; 3] = std::array::from_fn(|c| {
+        samples(N, 13 + c as u32)
+            .iter()
+            .map(|&v| v as f32 / 255.0)
+            .collect()
+    });
+    let sigma = vec![1.0f32; (W / 8) * (H / 8)];
+    for step in 0..3 {
+        let mut work = planes.clone();
+        group(c, &format!("jxl/epf step {step}"), N, |l| {
+            jxl::epf(l, step, &mut work, W, H, &sigma);
+            black_box(&work);
+        });
+    }
 }
 
 fn common_kernels(c: &mut Criterion) {

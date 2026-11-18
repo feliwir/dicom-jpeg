@@ -22,7 +22,7 @@ DICOM_JPEG_BENCH_LEVELS=all cargo bench -p dicom-jpeg-benchmarks --bench jpeg
 
 The `kernels` bench times each SIMD kernel by itself (JPEG 8- and 12-bit
 IDCT, FDCT and quantisation, up/downsampling, colour conversion; the
-JPEG 2000 DWT lifting steps; the JPEG XL inverse DCT; interleaving) at every level the CPU supports,
+JPEG 2000 DWT lifting steps; the JPEG XL inverse DCT and edge-preserving filter; interleaving) at every level the CPU supports,
 on 64 K samples of synthetic data:
 
 ```sh
