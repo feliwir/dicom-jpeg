@@ -654,8 +654,9 @@ fn to_image(ih: &ImageHeader, canvas: Canvas) -> Result<Image> {
             };
             let luma: Vec<f32>;
             let planes: Vec<&[f32]> = if nc == 1 {
-                luma = (0..n)
-                    .map(|i| 0.2126 * planes[0][i] + 0.7152 * planes[1][i] + 0.0722 * planes[2][i])
+                luma = (planes[0][..n].iter().zip(&planes[1][..n]))
+                    .zip(&planes[2][..n])
+                    .map(|((r, g), b)| 0.2126 * r + 0.7152 * g + 0.0722 * b)
                     .collect();
                 vec![&luma]
             } else {
