@@ -361,11 +361,11 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
             cs_prec = cs_prec.max(signed_bits(lo, hi));
         }
         if mct {
-            for i in 0..planes[0].len() {
-                let [y, cb, cr] = rct::forward(planes[0][i], planes[1][i], planes[2][i]);
-                planes[0][i] = y;
-                planes[1][i] = cb;
-                planes[2][i] = cr;
+            let [p0, p1, p2, ..] = &mut planes[..] else {
+                unreachable!("MCT needs three components")
+            };
+            for ((r, g), b) in p0.iter_mut().zip(p1.iter_mut()).zip(p2.iter_mut()) {
+                [*r, *g, *b] = rct::forward(*r, *g, *b);
             }
         }
         guard = 2;
@@ -418,11 +418,11 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
                 .iter()
                 .map(|p| p.iter().map(|&v| v as f32).collect())
                 .collect();
-            for i in 0..f[0].len() {
-                let [y, cb, cr] = ycbcr::forward(f[0][i], f[1][i], f[2][i]);
-                f[0][i] = y;
-                f[1][i] = cb;
-                f[2][i] = cr;
+            let [p0, p1, p2, ..] = &mut f[..] else {
+                unreachable!("MCT needs three components")
+            };
+            for ((r, g), b) in p0.iter_mut().zip(p1.iter_mut()).zip(p2.iter_mut()) {
+                [*r, *g, *b] = ycbcr::forward(*r, *g, *b);
             }
             f
         } else {

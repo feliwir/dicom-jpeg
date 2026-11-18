@@ -18,6 +18,7 @@ mod dwt;
 mod encoder;
 mod ht;
 mod jp2;
+mod level_shift;
 mod mct;
 mod mq;
 mod t1;
@@ -34,6 +35,7 @@ pub use decoder::{Component, DecoderOptions};
 #[doc(hidden)]
 pub mod kernels {
     pub use crate::dwt::kernels::*;
+    pub use crate::level_shift::kernels::*;
 }
 #[cfg(feature = "encode")]
 pub use encoder::{ComponentWavelet, EncoderOptions, encode_with};

@@ -196,6 +196,23 @@ fn j2k_kernels(c: &mut Criterion) {
         j2k::scale97(l, &mut fcur, 1.0);
         black_box(&fcur);
     });
+    // Output stage of N 12-bit samples: level shift and clamp of integer
+    // (5/3) samples, rounding too for float (9/7) samples.
+    let ints: Vec<i32> = samples(N, 14)
+        .iter()
+        .map(|&v| v as i32 * 16 - 2048)
+        .collect();
+    let floats: Vec<f32> = ints.iter().map(|&v| v as f32 + 0.3).collect();
+    let mut out = vec![0i32; N];
+    group(c, "j2k/level shift int", N, |l| {
+        out.copy_from_slice(&ints);
+        j2k::level_shift_int(l, &mut out, 12);
+        black_box(&out);
+    });
+    group(c, "j2k/level shift float", N, |l| {
+        j2k::level_shift_float(l, &floats, &mut out, 12);
+        black_box(&out);
+    });
 }
 
 fn jxl_kernels(c: &mut Criterion) {

@@ -10,6 +10,9 @@ use super::tile::{HeaderReader, HtState, TileComponent, ceil_div, decode_packet,
 use dicom_jpeg_common::Limits;
 use dicom_jpeg_common::color::{rct, ycbcr};
 use dicom_jpeg_common::float::{round_i32, round_i64};
+use dicom_jpeg_common::simd;
+
+use super::level_shift::{self, Range};
 use dicom_jpeg_common::{Error, Result};
 
 /// A decoded image component.
@@ -380,6 +383,7 @@ fn decode_tile(
     }
 
     // DC level shift and clamping (G.1).
+    let level = simd::level();
     for (c, co) in coeffs.into_iter().enumerate() {
         let s = &siz.comps[c];
         let prec = s.precision as u32;
@@ -398,9 +402,7 @@ fn decode_tile(
             Coefficients::Int(mut p) => {
                 let mut p = p.remove(0);
                 if let Some(((lo, hi), shift)) = narrow {
-                    for v in &mut p.data {
-                        *v = v.saturating_add(shift).clamp(lo, hi);
-                    }
+                    level_shift::shift_int(level, &mut p.data, Range { lo, hi, shift });
                 } else {
                     for v in &mut p.data {
                         *v = (*v as i64 + shift).clamp(lo, hi) as i32;
@@ -411,10 +413,9 @@ fn decode_tile(
             Coefficients::Float(mut p) => {
                 let p = p.remove(0);
                 let data = if let Some(((lo, hi), shift)) = narrow {
-                    p.data
-                        .iter()
-                        .map(|&v| round_i32(v).saturating_add(shift).clamp(lo, hi))
-                        .collect()
+                    let mut out = vec![0; p.data.len()];
+                    level_shift::shift_float(level, &p.data, &mut out, Range { lo, hi, shift });
+                    out
                 } else {
                     p.data
                         .iter()
