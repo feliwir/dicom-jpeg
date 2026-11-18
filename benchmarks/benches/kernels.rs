@@ -9,6 +9,7 @@ use criterion::{Criterion, SamplingMode, Throughput, criterion_group, criterion_
 use dicom_jpeg_benchmarks::criterion;
 use dicom_jpeg_common::interleave;
 use dicom_jpeg_common::simd::Level;
+use dicom_jpeg_j2k::kernels as j2k;
 use dicom_jpeg_jpeg::kernels;
 
 /// Row width and number of rows of the test planes.
@@ -68,6 +69,12 @@ fn jpeg_kernels(c: &mut Criterion) {
         kernels::idct_blocks(l, &coefs, 8, &mut out);
         black_box(&out);
     });
+    // 12-bit: the same blocks scaled by 16 (64-bit arithmetic).
+    let coefs12: Vec<[i32; 64]> = coefs.iter().map(|b| b.map(|v| v * 16)).collect();
+    group(c, "jpeg/idct 12-bit", N, |l| {
+        kernels::idct_blocks(l, &coefs12, 12, &mut out);
+        black_box(&out);
+    });
 
     // FDCT + quantisation of a W x H plane, a block row at a time.
     let plane = samples(N, 1);
@@ -77,6 +84,14 @@ fn jpeg_kernels(c: &mut Criterion) {
     group(c, "jpeg/fdct+quantize", N, |l| {
         for by in 0..H / 8 {
             kernels::fdct_quantize(l, &plane[by * 8 * W..], W, 8, &table, &mut row);
+        }
+        black_box(&row);
+    });
+    let plane12: Vec<u16> = plane.iter().map(|&v| v * 16 + (v >> 4)).collect();
+    let table12 = kernels::QuantTable::new(&q, 16383);
+    group(c, "jpeg/fdct+quantize 12-bit", N, |l| {
+        for by in 0..H / 8 {
+            kernels::fdct_quantize(l, &plane12[by * 8 * W..], W, 12, &table12, &mut row);
         }
         black_box(&row);
     });
@@ -145,6 +160,43 @@ fn jpeg_kernels(c: &mut Criterion) {
     });
 }
 
+fn j2k_kernels(c: &mut Criterion) {
+    // One lifting step over the N / 2 samples of one kind, as in a row or
+    // column pass (throughput in updated samples).
+    let h = N / 2;
+    let ints = |seed| -> Vec<i32> { samples(h, seed).iter().map(|&v| v as i32 - 128).collect() };
+    let (a, b) = (ints(9), ints(10));
+    let mut cur = ints(11);
+    group(c, "j2k/dwt update53", h, |l| {
+        j2k::update53(l, &mut cur, &a, &b);
+        black_box(&cur);
+    });
+    group(c, "j2k/dwt predict53", h, |l| {
+        j2k::predict53(l, &mut cur, &a, &b);
+        black_box(&cur);
+    });
+    group(c, "j2k/dwt apredict53", h, |l| {
+        j2k::apredict53(l, &mut cur, &a, &b);
+        black_box(&cur);
+    });
+    group(c, "j2k/dwt aupdate53", h, |l| {
+        j2k::aupdate53(l, &mut cur, &a, &b);
+        black_box(&cur);
+    });
+    let floats = |v: &[i32]| -> Vec<f32> { v.iter().map(|&x| x as f32).collect() };
+    let (fa, fb) = (floats(&a), floats(&b));
+    let mut fcur = floats(&cur);
+    group(c, "j2k/dwt lift97", h, |l| {
+        // A small k keeps the values bounded over the iterations.
+        j2k::lift97(l, &mut fcur, &fa, &fb, 0.0625);
+        black_box(&fcur);
+    });
+    group(c, "j2k/dwt scale97", h, |l| {
+        j2k::scale97(l, &mut fcur, 1.0);
+        black_box(&fcur);
+    });
+}
+
 fn common_kernels(c: &mut Criterion) {
     let p = [samples(N, 6), samples(N, 7), samples(N, 8)];
     let mut px8 = vec![0u8; 3 * N];
@@ -173,6 +225,6 @@ fn common_kernels(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = criterion();
-    targets = jpeg_kernels, common_kernels
+    targets = jpeg_kernels, j2k_kernels, common_kernels
 }
 criterion_main!(benches);

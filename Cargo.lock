@@ -462,6 +462,7 @@ dependencies = [
  "dicom-encoding",
  "dicom-jpeg",
  "dicom-jpeg-common",
+ "dicom-jpeg-j2k",
  "dicom-jpeg-jpeg",
  "dicom-object",
  "hayro-jpeg2000",

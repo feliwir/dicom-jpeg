@@ -27,6 +27,14 @@ mod tagtree;
 mod tile;
 
 pub use decoder::{Component, DecoderOptions};
+
+/// The internal kernels, exposed only for benchmarking them one by one.
+/// Not a stable API.
+#[cfg(feature = "kernels")]
+#[doc(hidden)]
+pub mod kernels {
+    pub use crate::dwt::kernels::*;
+}
 #[cfg(feature = "encode")]
 pub use encoder::{ComponentWavelet, EncoderOptions, encode_with};
 

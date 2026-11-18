@@ -23,6 +23,42 @@ mod neon;
 #[cfg(target_arch = "x86_64")]
 mod sse41;
 
+/// The lifting kernels, for the benchmarks.
+#[cfg(feature = "kernels")]
+pub(crate) mod kernels {
+    use super::*;
+
+    /// 5/3 synthesis update: `x -= (a + b + 2) >> 2`.
+    pub fn update53(level: Level, cur: &mut [i32], a: &[i32], b: &[i32]) {
+        dispatch!(level => update53(cur, a, b))
+    }
+
+    /// 5/3 synthesis predict: `x += (a + b) >> 1`.
+    pub fn predict53(level: Level, cur: &mut [i32], a: &[i32], b: &[i32]) {
+        dispatch!(level => predict53(cur, a, b))
+    }
+
+    /// 5/3 analysis predict: `x -= (a + b) >> 1`.
+    pub fn apredict53(level: Level, cur: &mut [i32], a: &[i32], b: &[i32]) {
+        dispatch!(level => apredict53(cur, a, b))
+    }
+
+    /// 5/3 analysis update: `x += (a + b + 2) >> 2`.
+    pub fn aupdate53(level: Level, cur: &mut [i32], a: &[i32], b: &[i32]) {
+        dispatch!(level => aupdate53(cur, a, b))
+    }
+
+    /// 9/7 lifting step: `x -= k * (a + b)`.
+    pub fn lift97(level: Level, cur: &mut [f32], a: &[f32], b: &[f32], k: f32) {
+        dispatch!(level => lift97(cur, a, b, k))
+    }
+
+    /// 9/7 scaling: `x *= k`.
+    pub fn scale97(level: Level, cur: &mut [f32], k: f32) {
+        dispatch!(level => scale97(cur, k))
+    }
+}
+
 /// A rectangular array of coefficients with its origin in the coordinate
 /// system of its resolution level or sub-band.
 #[derive(Debug, Clone)]

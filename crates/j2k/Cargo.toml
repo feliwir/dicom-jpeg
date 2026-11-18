@@ -14,6 +14,8 @@ encode = []
 part2 = []
 # ISO/IEC 15444-15 High-Throughput block coder
 htj2k = []
+# Unstable: exposes the internal kernels for the benchmarks.
+kernels = ["encode"]
 
 [dependencies]
 dicom-jpeg-common.workspace = true
