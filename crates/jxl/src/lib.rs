@@ -18,10 +18,12 @@ pub use encode::encode_lossless;
 mod entropy;
 mod epf;
 mod frame;
+mod gaborish;
 mod headers;
 mod modular;
 mod render;
 mod vardct;
+mod xyb;
 
 /// The internal kernels, exposed only for benchmarking them one by one.
 /// Not a stable API.
@@ -30,6 +32,8 @@ mod vardct;
 pub mod kernels {
     pub use crate::dct::kernels::*;
     pub use crate::epf::kernels::*;
+    pub use crate::gaborish::kernels::*;
+    pub use crate::xyb::kernels::*;
 }
 
 use dicom_jpeg_common::float::round_i32;

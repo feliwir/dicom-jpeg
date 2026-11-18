@@ -1,7 +1,11 @@
 //! The Gaborish restoration filter and the XYB to RGB colour conversion
 //! (ISO/IEC 18181-1 Annex J and L); the edge-preserving filter is in `epf`.
 
+use dicom_jpeg_common::simd;
+
+use super::gaborish;
 use super::headers::OpsinInverse;
+use super::xyb::{self, Xyb};
 
 /// Mirror an index into `0..len` (whole-sample symmetric).
 #[inline]
@@ -38,6 +42,7 @@ pub(crate) fn padded(plane: &[f32], w: usize, h: usize, b: usize) -> Vec<f32> {
 
 /// Gaborish: a 3x3 convolution per channel with mirrored edges.
 pub(crate) fn gaborish(planes: &mut [Vec<f32>; 3], w: usize, h: usize, weights: [[f32; 2]; 3]) {
+    let level = simd::level();
     let pw = w + 2;
     for (c, plane) in planes.iter_mut().enumerate() {
         let [w0, w1] = weights[c];
@@ -49,11 +54,7 @@ pub(crate) fn gaborish(planes: &mut [Vec<f32>; 3], w: usize, h: usize, weights: 
                 &src[(y + 1) * pw..][..pw],
                 &src[(y + 2) * pw..][..pw],
             );
-            for (x, d) in dst.iter_mut().enumerate() {
-                let side = mid[x] + mid[x + 2] + up[x + 1] + down[x + 1];
-                let diag = up[x] + up[x + 2] + down[x] + down[x + 2];
-                *d = (mid[x + 1] + side * w0 + diag * w1) * norm;
-            }
+            gaborish::row(level, up, mid, down, dst, [w0, w1, norm]);
         }
     }
 }
@@ -64,24 +65,19 @@ pub(crate) fn xyb_to_linear(
     opsin: &OpsinInverse,
     intensity_target: f32,
 ) {
-    let itscale = 255.0 / intensity_target;
-    let cbrt_bias = opsin.bias.map(|b| b.cbrt());
-    let m = &opsin.matrix;
+    let k = Xyb {
+        cbrt_bias: opsin.bias.map(|b| b.cbrt()),
+        bias: opsin.bias,
+        itscale: 255.0 / intensity_target,
+        matrix: opsin.matrix,
+    };
     let n = planes[0].len();
-    for i in 0..n {
-        let (x, y, b) = (planes[0][i], planes[1][i], planes[2][i]);
-        let l = y + x - cbrt_bias[0];
-        let mm = y - x - cbrt_bias[1];
-        let s = b - cbrt_bias[2];
-        let mixed = [
-            (l * l * l + opsin.bias[0]) * itscale,
-            (mm * mm * mm + opsin.bias[1]) * itscale,
-            (s * s * s + opsin.bias[2]) * itscale,
-        ];
-        for c in 0..3 {
-            planes[c][i] = m[c * 3] * mixed[0] + m[c * 3 + 1] * mixed[1] + m[c * 3 + 2] * mixed[2];
-        }
-    }
+    let [p0, p1, p2] = planes;
+    xyb::to_linear(
+        simd::level(),
+        [&mut p0[..n], &mut p1[..n], &mut p2[..n]],
+        &k,
+    );
 }
 
 /// Linear light to the encoded transfer function of the output colour space.

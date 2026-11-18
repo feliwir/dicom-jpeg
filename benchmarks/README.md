@@ -20,10 +20,11 @@ DICOM_JPEG_BENCH_LEVELS=all cargo bench -p dicom-jpeg-benchmarks --bench jpeg
 
 `DICOM_JPEG_SIMD=<level>` instead lowers the level for the whole run.
 
-The `kernels` bench times each SIMD kernel by itself (JPEG 8- and 12-bit
-IDCT, FDCT and quantisation, up/downsampling, colour conversion; the
-JPEG 2000 DWT lifting steps; the JPEG XL inverse DCT and edge-preserving filter; interleaving) at every level the CPU supports,
-on 64 K samples of synthetic data:
+The `kernels` bench times each SIMD kernel by itself at every level the
+CPU supports, on 64 K samples of synthetic data: the JPEG 8- and 12-bit
+IDCT, FDCT and quantisation, up/downsampling and colour conversion; the
+JPEG 2000 DWT lifting steps; the JPEG XL inverse DCT, edge-preserving
+filter, Gaborish and XYB conversion; and interleaving:
 
 ```sh
 cargo bench -p dicom-jpeg-benchmarks --bench kernels

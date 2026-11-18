@@ -235,6 +235,44 @@ fn jxl_kernels(c: &mut Criterion) {
             black_box(&work);
         });
     }
+
+    // Gaborish of W-wide rows (from padded rows, N outputs).
+    let padded = samples(N + 2 * H, 16)
+        .iter()
+        .map(|&v| v as f32 / 255.0)
+        .collect::<Vec<_>>();
+    let mut row = vec![0f32; W];
+    let k = [0.115, 0.061, 1.0 / (1.0 + 4.0 * 0.115 + 4.0 * 0.061)];
+    group(c, "jxl/gaborish", N, |l| {
+        for y in 0..H {
+            let r = |d: usize| &padded[((y + d) % H) * (W + 2)..][..W + 2];
+            jxl::gaborish_row(l, r(0), r(1), r(2), &mut row, k);
+        }
+        black_box(&row);
+    });
+
+    // XYB to linear RGB of N pixels (X small and signed, Y and B in 0..1).
+    let xyb: [Vec<f32>; 3] = std::array::from_fn(|c| {
+        samples(N, 17 + c as u32)
+            .iter()
+            .map(|&v| {
+                if c == 0 {
+                    (v as f32 - 128.0) / 4096.0
+                } else {
+                    v as f32 / 255.0
+                }
+            })
+            .collect()
+    });
+    let mut work = xyb.clone();
+    group(c, "jxl/xyb->linear", N, |l| {
+        for (w, s) in work.iter_mut().zip(&xyb) {
+            w.copy_from_slice(s);
+        }
+        let [a, b, c] = &mut work;
+        jxl::xyb_to_linear(l, [a, b, c]);
+        black_box(&work);
+    });
 }
 
 fn common_kernels(c: &mut Criterion) {
