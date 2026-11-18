@@ -21,6 +21,8 @@ mod jp2;
 mod level_shift;
 mod mct;
 mod mq;
+#[cfg(feature = "encode")]
+mod rate;
 mod t1;
 #[cfg(feature = "encode")]
 mod t1_enc;
@@ -36,6 +38,7 @@ pub use decoder::{Component, DecoderOptions};
 pub mod kernels {
     pub use crate::dwt::kernels::*;
     pub use crate::level_shift::kernels::*;
+    pub use crate::rate::kernels::*;
 
     use crate::mq::{MqDecoder, MqEncoder, NUM_CONTEXTS, initial_contexts};
 

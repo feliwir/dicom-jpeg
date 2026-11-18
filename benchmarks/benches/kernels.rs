@@ -204,6 +204,14 @@ fn j2k_kernels(c: &mut Criterion) {
         j2k::scale97(l, &mut fcur, 1.0);
         black_box(&fcur);
     });
+    // Squared quantisation errors of the rate search for N magnitudes.
+    let mags: Vec<f64> = samples(N, 15).iter().map(|&v| v as f64 * 3.7).collect();
+    let mut terms = vec![0f64; N];
+    group(c, "j2k/rate error terms", N, |l| {
+        j2k::rate_error_terms(l, &mags, 23.5, &mut terms);
+        black_box(&terms);
+    });
+
     // Output stage of N 12-bit samples: level shift and clamp of integer
     // (5/3) samples, rounding too for float (9/7) samples.
     let ints: Vec<i32> = samples(N, 14)

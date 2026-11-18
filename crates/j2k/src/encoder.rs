@@ -9,11 +9,13 @@ use super::CODEC;
 use super::codestream::{ComponentCoding, ComponentSiz, GlobalCoding, Quantization, TileParams};
 use super::dwt::{Analyse, Plane, analyse_level, synth_level};
 use super::ht::encode::encode as ht_encode;
+use super::rate;
 use super::t1::Orient;
 use super::t1_enc::{self, EncodedBlock};
 use super::tagtree::TagTreeEncoder;
 use super::tile::{TileComponent, packet_order};
 use dicom_jpeg_common::color::{rct, ycbcr};
+use dicom_jpeg_common::simd;
 use dicom_jpeg_common::{AppliedTransform, ColorSpace, Encoded, Image};
 use dicom_jpeg_common::{Error, Result};
 
@@ -504,6 +506,16 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
         // most bands keep their step between bisection iterations.
         let mut band_errors: std::collections::HashMap<(usize, usize, u64), (f64, usize)> =
             std::collections::HashMap::new();
+        // The sampled magnitudes of each band, gathered once.
+        let sampled: Vec<Vec<Vec<f64>>> = decomposed
+            .iter()
+            .map(|comp| {
+                comp.iter()
+                    .map(|(_, p)| p.data.iter().step_by(3).map(|&v| v.abs() as f64).collect())
+                    .collect()
+            })
+            .collect();
+        let level = simd::level();
         let mut mse_for = |base: f64| -> f64 {
             let steps = steps_for(base);
             let mut total = 0.0;
@@ -511,19 +523,10 @@ pub fn encode_with(image: &Image, opts: &EncoderOptions) -> Result<Encoded> {
                 let wc = weight(c);
                 for (i, (_, p)) in comp.iter().enumerate() {
                     let d = steps[i].2;
-                    let (err, n) = *band_errors.entry((c, i, d.to_bits())).or_insert_with(|| {
-                        let mut err = 0.0;
-                        let mut n = 0usize;
-                        for &v in p.data.iter().step_by(3) {
-                            let a = v.abs() as f64;
-                            // a / d >= 0: truncation is floor (and no libm call).
-                            let q = (a / d) as i64 as f64;
-                            let rec = if q == 0.0 { 0.0 } else { (q + 0.5) * d };
-                            err += (a - rec) * (a - rec);
-                            n += 1;
-                        }
-                        (err, n)
-                    });
+                    let a = &sampled[c][i];
+                    let (err, n) = *band_errors
+                        .entry((c, i, d.to_bits()))
+                        .or_insert_with(|| (rate::error_sum(level, a, d), a.len()));
                     if n > 0 {
                         total += wc * err * (p.data.len() as f64 / n as f64) * norms[i] * norms[i];
                     }
