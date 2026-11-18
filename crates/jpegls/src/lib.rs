@@ -11,6 +11,35 @@ mod bitio;
 mod coding;
 mod scan;
 
+/// The internal kernels, exposed only for benchmarking them one by one.
+/// Not a stable API.
+#[cfg(feature = "kernels")]
+#[doc(hidden)]
+pub mod kernels {
+    /// Golomb codes of 8-bit lossless coding (LIMIT 32, qbpp 8).
+    const LIMIT: u32 = 32;
+    const QBPP: u32 = 8;
+
+    /// Write `values[i]` (mapped errors) as Golomb codes with parameters
+    /// `ks[i]`.
+    pub fn golomb_encode(values: &[i32], ks: &[u32]) -> Vec<u8> {
+        let mut w = crate::bitio::BitWriter::new(Vec::new());
+        for (&v, &k) in values.iter().zip(ks) {
+            w.golomb(v, k, LIMIT, QBPP);
+        }
+        w.flush();
+        w.into_out()
+    }
+
+    /// Read `out.len()` Golomb codes with parameters `ks` from `data`.
+    pub fn golomb_decode(data: &[u8], ks: &[u32], out: &mut [i32]) {
+        let mut r = crate::bitio::BitReader::new(data, 0);
+        for (o, &k) in out.iter_mut().zip(ks) {
+            *o = r.golomb(k, LIMIT, QBPP).expect("valid stream");
+        }
+    }
+}
+
 use bitio::BitReader;
 #[cfg(feature = "encode")]
 use bitio::BitWriter;

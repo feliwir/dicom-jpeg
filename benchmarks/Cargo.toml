@@ -15,6 +15,7 @@ dicom-jpeg-common.workspace = true
 dicom-jpeg-jpeg = { workspace = true, features = ["kernels"] }
 dicom-jpeg-j2k = { workspace = true, features = ["kernels"] }
 dicom-jpeg-jxl = { workspace = true, features = ["kernels"] }
+dicom-jpeg-jpegls = { workspace = true, features = ["kernels"] }
 dicom-core.workspace = true
 dicom-dictionary-std.workspace = true
 dicom-encoding.workspace = true
@@ -66,4 +67,8 @@ harness = false
 
 [[bench]]
 name = "kernels"
+harness = false
+
+[[bench]]
+name = "bits"
 harness = false

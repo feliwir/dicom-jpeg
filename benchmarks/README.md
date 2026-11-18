@@ -32,6 +32,25 @@ cargo bench -p dicom-jpeg-benchmarks --bench kernels
 cargo bench -p dicom-jpeg-benchmarks --bench kernels -- idct
 ```
 
+The `bits` bench times the bit-level entropy-coding primitives (the T.81
+bit reader and writer, JPEG-LS Golomb codes, the JPEG 2000 MQ coder). They
+do not dispatch on a SIMD level; their speed depends on the scalar
+instructions the crates are compiled for. To compare instruction sets,
+save a baseline with the default (x86-64) build and compare a build with
+more target features against it, in a separate target directory that
+shares the Criterion results:
+
+```sh
+cargo bench -p dicom-jpeg-benchmarks --bench bits -- --save-baseline x86-64
+CRITERION_HOME=$PWD/target/criterion CARGO_TARGET_DIR=target-bmi \
+  RUSTFLAGS="-C target-feature=+bmi1,+bmi2,+lzcnt,+popcnt" \
+  cargo bench -p dicom-jpeg-benchmarks --bench bits -- --baseline x86-64
+```
+
+The same works for the codec benches (filter with `dicom-jpeg` to skip
+the references). Run both orders: run-to-run drift of a few percent is
+common, as the references, which `RUSTFLAGS` does not change, show.
+
 Criterion writes an HTML report to `target/criterion/report/index.html`,
 with one page per group (violin plot of all implementations) and per
 benchmark.

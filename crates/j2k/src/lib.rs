@@ -36,6 +36,27 @@ pub use decoder::{Component, DecoderOptions};
 pub mod kernels {
     pub use crate::dwt::kernels::*;
     pub use crate::level_shift::kernels::*;
+
+    use crate::mq::{MqDecoder, MqEncoder, NUM_CONTEXTS, initial_contexts};
+
+    /// MQ-encode the decisions `(context, bit)` (contexts below 19).
+    pub fn mq_encode(decisions: &[(u8, u8)]) -> Vec<u8> {
+        let mut cx = initial_contexts();
+        let mut e = MqEncoder::new();
+        for &(c, d) in decisions {
+            e.encode(&mut cx[c as usize % NUM_CONTEXTS], d as u32);
+        }
+        e.finish()
+    }
+
+    /// MQ-decode one decision per entry of `contexts` into `out`.
+    pub fn mq_decode(data: &[u8], contexts: &[u8], out: &mut [u8]) {
+        let mut cx = initial_contexts();
+        let mut d = MqDecoder::new(data);
+        for (o, &c) in out.iter_mut().zip(contexts) {
+            *o = d.decode(&mut cx[c as usize % NUM_CONTEXTS]) as u8;
+        }
+    }
 }
 #[cfg(feature = "encode")]
 pub use encoder::{ComponentWavelet, EncoderOptions, encode_with};
