@@ -29,13 +29,13 @@ pub(crate) fn padded(plane: &[f32], w: usize, h: usize, b: usize) -> Vec<f32> {
     let cols: Vec<usize> = (0..pw)
         .map(|x| mirror(x as isize - b as isize, w))
         .collect();
-    let mut out = vec![0f32; pw * (h + 2 * b)];
-    for (py, dst) in out.chunks_exact_mut(pw).enumerate() {
+    // Appended row by row, so the buffer is never zeroed first.
+    let mut out = Vec::with_capacity(pw * (h + 2 * b));
+    for py in 0..h + 2 * b {
         let src = &plane[mirror(py as isize - b as isize, h) * w..][..w];
-        dst[b..b + w].copy_from_slice(src);
-        for x in (0..b).chain(b + w..pw) {
-            dst[x] = src[cols[x]];
-        }
+        out.extend(cols[..b].iter().map(|&x| src[x]));
+        out.extend_from_slice(src);
+        out.extend(cols[b + w..].iter().map(|&x| src[x]));
     }
     out
 }
