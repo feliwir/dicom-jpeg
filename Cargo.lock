@@ -464,6 +464,7 @@ dependencies = [
  "dicom-jpeg-common",
  "dicom-jpeg-j2k",
  "dicom-jpeg-jpeg",
+ "dicom-jpeg-jxl",
  "dicom-object",
  "hayro-jpeg2000",
  "jpeg-decoder",

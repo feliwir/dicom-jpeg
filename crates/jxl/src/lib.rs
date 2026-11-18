@@ -9,6 +9,7 @@
 #![deny(unsafe_code)]
 
 mod bits;
+mod dct;
 #[cfg(feature = "encode")]
 mod encode;
 
@@ -20,6 +21,14 @@ mod headers;
 mod modular;
 mod render;
 mod vardct;
+
+/// The internal kernels, exposed only for benchmarking them one by one.
+/// Not a stable API.
+#[cfg(feature = "kernels")]
+#[doc(hidden)]
+pub mod kernels {
+    pub use crate::dct::kernels::*;
+}
 
 use dicom_jpeg_common::float::round_i32;
 use dicom_jpeg_common::{Codec, ColorSpace, DecodeOptions, Image, ImageInfo};

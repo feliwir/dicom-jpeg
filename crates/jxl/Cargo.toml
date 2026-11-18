@@ -10,6 +10,8 @@ repository.workspace = true
 [features]
 default = ["encode"]
 encode = []
+# Unstable: exposes the internal kernels for the benchmarks.
+kernels = []
 
 [dependencies]
 dicom-jpeg-common.workspace = true

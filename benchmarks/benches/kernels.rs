@@ -11,6 +11,7 @@ use dicom_jpeg_common::interleave;
 use dicom_jpeg_common::simd::Level;
 use dicom_jpeg_j2k::kernels as j2k;
 use dicom_jpeg_jpeg::kernels;
+use dicom_jpeg_jxl::kernels as jxl;
 
 /// Row width and number of rows of the test planes.
 const W: usize = 1024;
@@ -197,6 +198,28 @@ fn j2k_kernels(c: &mut Criterion) {
     });
 }
 
+fn jxl_kernels(c: &mut Criterion) {
+    // Inverse VarDCT of N coefficients as 8 x 8 and as 32 x 32 blocks,
+    // with magnitudes falling off with frequency.
+    let coefs: Vec<f32> = samples(N, 12)
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| (v as f32 - 128.0) / (1 + i % 64) as f32)
+        .collect();
+    for side in [8, 32] {
+        let mut work = coefs.clone();
+        let mut levels: Vec<_> = Level::supported().map(|l| (l, jxl::Idct::new(l))).collect();
+        group(c, &format!("jxl/idct {side}x{side}"), N, |l| {
+            let idct = &mut levels.iter_mut().find(|(k, _)| *k == l).expect("level").1;
+            work.copy_from_slice(&coefs);
+            for b in work.chunks_exact_mut(side * side) {
+                idct.inverse(b, side, side);
+            }
+            black_box(&work);
+        });
+    }
+}
+
 fn common_kernels(c: &mut Criterion) {
     let p = [samples(N, 6), samples(N, 7), samples(N, 8)];
     let mut px8 = vec![0u8; 3 * N];
@@ -225,6 +248,6 @@ fn common_kernels(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = criterion();
-    targets = jpeg_kernels, j2k_kernels, common_kernels
+    targets = jpeg_kernels, j2k_kernels, jxl_kernels, common_kernels
 }
 criterion_main!(benches);
